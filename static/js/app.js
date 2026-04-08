@@ -4351,14 +4351,14 @@ function t(key) {
                             padding: 1mm;
                         }
                         .product-name {
-                            font-size: 8pt;
+                            font-size: 16pt;
                             font-weight: 700;
                             text-align: center;
                             word-break: break-all;
                             line-height: 1.2;
                         }
                         .lot-no {
-                            font-size: 6.5pt;
+                            font-size: 13pt;
                             font-weight: 600;
                             text-align: center;
                         }
