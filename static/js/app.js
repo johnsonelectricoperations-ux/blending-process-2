@@ -691,6 +691,8 @@ function t(key) {
 
                     currentInspection = data.data;
                     currentItems = data.items;
+                    currentSavedValues = {};
+                    pendingResults = {};
 
                     showInspectionPage();
                 } else {
