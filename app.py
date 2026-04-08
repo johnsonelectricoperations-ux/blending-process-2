@@ -3946,17 +3946,24 @@ def get_work_progress():
         with closing(get_db()) as conn:
             cursor = conn.cursor()
 
-            # 작업지시별 진도율
+            # 작업지시별 진도율 (main 분말 실투입 중량 기준)
             cursor.execute('''
                 SELECT
                     bo.work_order_number,
                     bo.product_name,
                     bo.total_target_weight,
-                    COALESCE(SUM(bw.actual_total_weight), 0) as completed_weight
+                    COALESCE((
+                        SELECT SUM(mi.actual_weight)
+                        FROM blending_work bw2
+                        JOIN material_input mi ON mi.blending_work_id = bw2.id
+                        JOIN recipe r ON mi.powder_name = r.powder_name
+                                      AND r.product_name = bo.product_name
+                                      AND r.is_main = 1
+                                      AND r.is_active = 1
+                        WHERE bw2.work_order_id = bo.id AND bw2.status = 'completed'
+                    ), 0) as completed_weight
                 FROM blending_order bo
-                LEFT JOIN blending_work bw ON bo.id = bw.work_order_id AND bw.status = 'completed'
                 WHERE DATE(bo.created_date) >= ?
-                GROUP BY bo.id, bo.work_order_number, bo.product_name, bo.total_target_weight
                 ORDER BY bo.created_date DESC
                 LIMIT 10
             ''', (start_date,))
