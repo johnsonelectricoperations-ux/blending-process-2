@@ -3380,6 +3380,10 @@ function t(key) {
                         actionHtml = `<button class="btn primary" onclick="startBlendingInspectionFromMixing('${work.batch_lot}', '${work.product_name}')" style="padding:6px 10px;">🔧 배합검사</button>`;
                     }
 
+                    const pName = work.product_name.replace(/'/g, "\\'");
+                    const bLot = work.batch_lot.replace(/'/g, "\\'");
+                    const labelBtn = `<button class="btn" onclick="printMixingSmallLabel('${pName}','${bLot}')" style="padding:6px 10px; background:#1976D2; color:#fff; margin-left:4px;" title="라벨 출력">🏷️</button>`;
+
                     html += `
                         <tr>
                             <td>${work.work_order || '-'}</td>
@@ -3387,7 +3391,7 @@ function t(key) {
                             <td><strong>${work.batch_lot}</strong></td>
                             <td>${work.operator || '-'}</td>
                             <td>${endTime}</td>
-                            <td>${actionHtml}</td>
+                            <td style="white-space:nowrap;">${actionHtml}${labelBtn}</td>
                         </tr>
                     `;
                 });
@@ -4319,6 +4323,92 @@ function t(key) {
                 console.error('바코드 조회 실패:', error);
                 alert('바코드를 불러오는 중 오류가 발생했습니다: ' + error.message);
             }
+        }
+
+        function printMixingSmallLabel(productName, batchLot) {
+            const qrValue = `${productName}-${batchLot}`;
+            const w = window.open('', '_blank');
+            if (!w) return alert('팝업 차단을 확인하세요.');
+
+            const html = `
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>라벨 인쇄</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { width: 40mm; height: 30mm; background: #fff; }
+                        .label {
+                            width: 40mm;
+                            height: 30mm;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 1mm;
+                            font-family: Arial, sans-serif;
+                            color: #000;
+                            padding: 1mm;
+                        }
+                        .product-name {
+                            font-size: 8pt;
+                            font-weight: 700;
+                            text-align: center;
+                            word-break: break-all;
+                            line-height: 1.2;
+                        }
+                        .lot-no {
+                            font-size: 6.5pt;
+                            font-weight: 600;
+                            text-align: center;
+                        }
+                        #qrcode { display: flex; justify-content: center; align-items: center; }
+                        @page { size: 40mm 30mm; margin: 0; }
+                        @media print {
+                            body { margin: 0; background: #fff; }
+                            button { display: none; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="label">
+                        <div class="product-name">${productName}</div>
+                        <div id="qrcode"></div>
+                        <div class="lot-no">LOT: ${batchLot}</div>
+                    </div>
+                    <script src="/static/js/qrcode.min.js"><\/script>
+                    <script>
+                        window.onload = function() {
+                            new QRCode(document.getElementById('qrcode'), {
+                                text: '${qrValue}',
+                                width: 55,
+                                height: 55,
+                                colorDark: '#000000',
+                                colorLight: '#ffffff',
+                                correctLevel: QRCode.CorrectLevel.H
+                            });
+                            var imgs = document.querySelectorAll('img');
+                            var total = imgs.length;
+                            var loaded = 0;
+                            function tryPrint() {
+                                loaded++;
+                                if (loaded >= total) { window.print(); window.close(); }
+                            }
+                            if (total === 0) { setTimeout(function(){ window.print(); window.close(); }, 500); return; }
+                            for (var i = 0; i < total; i++) {
+                                if (imgs[i].complete) tryPrint();
+                                else { imgs[i].onload = tryPrint; imgs[i].onerror = tryPrint; }
+                            }
+                            setTimeout(function(){ window.print(); window.close(); }, 3000);
+                        };
+                    <\/script>
+                </body>
+                </html>
+            `;
+
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
         }
 
         function showBarcodeModal(work) {
