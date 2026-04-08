@@ -2789,13 +2789,12 @@ def get_completed_lots():
         with closing(get_db()) as conn:
             cursor = conn.cursor()
 
-            # 수입검사 완료(PASS)된 LOT만 조회 (최근 5개)
+            # 수입검사 완료(PASS)된 LOT만 조회
             cursor.execute('''
                 SELECT lot_number, inspection_time, final_result
                 FROM inspection_result
                 WHERE powder_name = ? AND category = ? AND final_result = 'PASS'
                 ORDER BY inspection_time DESC
-                LIMIT 5
             ''', (powder_name, category))
 
             lots = []
