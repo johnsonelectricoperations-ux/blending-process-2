@@ -2333,9 +2333,22 @@ def ensure_recipe_tolerance_columns():
                 cursor.execute('UPDATE recipe SET tolerance_minus = tolerance_percent, tolerance_plus = tolerance_percent WHERE tolerance_percent IS NOT NULL')
             conn.commit()
 
+def ensure_blending_order_hidden_columns():
+    """blending_order 테이블에 is_hidden 관련 컬럼 추가 (마이그레이션)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(blending_order)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'is_hidden' not in columns:
+            cursor.execute('ALTER TABLE blending_order ADD COLUMN is_hidden INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE blending_order ADD COLUMN hidden_at TIMESTAMP')
+            cursor.execute('ALTER TABLE blending_order ADD COLUMN hidden_by VARCHAR(50)')
+            conn.commit()
+
 # 서버 시작 시 테이블 보장
 ensure_product_spec_table()
 ensure_recipe_tolerance_columns()
+ensure_blending_order_hidden_columns()
 
 
 @app.route('/api/admin/product-spec/rev', methods=['POST'])
@@ -3463,6 +3476,7 @@ def get_blending_orders():
         status_filter = request.args.get('status', 'all')
         date_from = request.args.get('date_from', '')
         date_to = request.args.get('date_to', '')
+        include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()
@@ -3470,6 +3484,10 @@ def get_blending_orders():
             # 기본 WHERE 조건 구성
             where_clauses = []
             params = []
+
+            # 숨긴 계획 필터 (기본: 숨긴 계획 제외)
+            if not include_hidden:
+                where_clauses.append('(is_hidden IS NULL OR is_hidden = 0)')
 
             if status_filter != 'all':
                 where_clauses.append('status = ?')
@@ -3627,6 +3645,44 @@ def delete_blending_order(order_id):
             return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/blending-orders/<int:order_id>/hide', methods=['PATCH'])
+def toggle_blending_order_hidden(order_id):
+    """배합작업지시서 숨기기/복원"""
+    try:
+        data = request.get_json() or {}
+        hide = data.get('hide', True)  # True: 숨기기, False: 복원
+        hidden_by = data.get('hidden_by', '')
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT id, work_order_number FROM blending_order WHERE id = ?', (order_id,))
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': '작업지시서를 찾을 수 없습니다.'})
+
+            if hide:
+                cursor.execute('''
+                    UPDATE blending_order
+                    SET is_hidden = 1, hidden_at = CURRENT_TIMESTAMP, hidden_by = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (hidden_by, order_id))
+                msg = f'작업지시서 "{order[1]}"이(가) 숨겨졌습니다.'
+            else:
+                cursor.execute('''
+                    UPDATE blending_order
+                    SET is_hidden = 0, hidden_at = NULL, hidden_by = NULL, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (order_id,))
+                msg = f'작업지시서 "{order[1]}"이(가) 복원되었습니다.'
+
+            conn.commit()
+            return jsonify({'success': True, 'message': msg})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 
 @app.route('/api/blending-orders/<int:order_id>/progress', methods=['GET'])
 def get_blending_order_progress(order_id):

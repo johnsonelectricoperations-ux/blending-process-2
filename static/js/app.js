@@ -4937,10 +4937,12 @@ function t(key) {
                 const statusFilter = document.getElementById('orderStatusFilter')?.value || 'all';
                 const dateFrom = document.getElementById('orderDateFrom')?.value || '';
                 const dateTo = document.getElementById('orderDateTo')?.value || '';
+                const includeHidden = document.getElementById('showHiddenOrders')?.checked || false;
 
                 let url = `${API_BASE}/api/blending-orders?status=${statusFilter}`;
                 if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`;
                 if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`;
+                if (includeHidden) url += `&include_hidden=true`;
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -4971,19 +4973,37 @@ function t(key) {
                 data.orders.forEach(order => {
                     const progressPercent = order.progress_percent || 0;
                     const isCompleted = order.status === 'completed' || progressPercent >= 100;
+                    const isHidden = order.is_hidden === 1;
 
                     // 진도(톤 단위) UI
                     const progressBar = renderTonProgress(order.total_target_weight, order.completed_weight);
 
-                    const rowBg = isCompleted ? '#1a2e1a' : 'var(--bg-card)';
+                    let rowBg = isCompleted ? '#1a2e1a' : 'var(--bg-card)';
+                    if (isHidden) rowBg = '#2a2a1a';
+
+                    const hiddenBadge = isHidden
+                        ? '<span style="background:#888; color:#fff; font-size:11px; padding:2px 7px; border-radius:4px; margin-left:6px;">숨김</span>'
+                        : '';
+
+                    let actionHtml = '';
+                    if (isHidden) {
+                        actionHtml = `<button onclick="toggleHideBlendingOrder(${order.id}, false)" class="btn secondary" style="padding: 8px 12px; border-radius:4px;">복원</button>`;
+                    } else if (isCompleted) {
+                        actionHtml = '<span style="background: #4CAF50; color: white; padding: 8px 16px; border-radius: 5px; font-weight: 600;">✓ 완료</span>';
+                    } else {
+                        actionHtml = `
+                            <button onclick="toggleHideBlendingOrder(${order.id}, true)" class="btn secondary" style="padding: 8px 12px; border-radius:4px; margin-right:4px;">숨기기</button>
+                            <button onclick="deleteBlendingOrder(${order.id})" class="btn danger" style="padding: 8px 12px; border-radius:4px;">삭제</button>
+                        `;
+                    }
 
                     html += `
-                        <tr style="background: ${rowBg}; border-bottom: 1px solid #333;">
+                        <tr style="background: ${rowBg}; border-bottom: 1px solid #333; ${isHidden ? 'opacity:0.65;' : ''}">
                             <td style="padding: 15px; text-align: center;">
                                 ${order.created_date}
                             </td>
                             <td style="padding: 15px; text-align: center;">
-                                ${order.work_order_number}
+                                ${order.work_order_number}${hiddenBadge}
                             </td>
                             <td style="padding: 15px; text-align: center; font-weight: 600; font-size: 1.1em;">
                                 ${order.product_name}
@@ -4995,10 +5015,7 @@ function t(key) {
                                 ${progressBar}
                             </td>
                             <td style="padding: 15px; text-align: center;">
-                                ${isCompleted
-                                    ? '<span style="background: #4CAF50; color: white; padding: 8px 16px; border-radius: 5px; font-weight: 600;">✓ 완료</span>'
-                                    : `<button onclick="deleteBlendingOrder(${order.id})" class="btn danger" style="padding: 8px 12px; border-radius:4px;">삭제</button>`
-                                }
+                                ${actionHtml}
                             </td>
                         </tr>
                     `;
@@ -5016,14 +5033,36 @@ function t(key) {
             }
         }
 
+        async function toggleHideBlendingOrder(orderId, hide) {
+            const msg = hide ? '이 작업지시서를 숨기겠습니까?\n배합작업 화면에서도 표시되지 않습니다.' : '이 작업지시서를 복원하겠습니까?';
+            if (!confirm(msg)) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/blending-orders/${orderId}/hide`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hide })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    alert('처리 실패: ' + (data.message || '알 수 없는 오류'));
+                    return;
+                }
+                loadBlendingOrders();
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        }
+
         function resetOrderFilters() {
             const statusEl = document.getElementById('orderStatusFilter');
             const dateFromEl = document.getElementById('orderDateFrom');
             const dateToEl = document.getElementById('orderDateTo');
+            const showHiddenEl = document.getElementById('showHiddenOrders');
 
             if (statusEl) statusEl.value = 'in_progress';
             if (dateFromEl) dateFromEl.value = '';
             if (dateToEl) dateToEl.value = '';
+            if (showHiddenEl) showHiddenEl.checked = false;
 
             loadBlendingOrders();
         }

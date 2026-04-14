@@ -333,6 +333,10 @@
                         <button class="btn secondary" onclick="resetOrderFilters()" style="padding: 6px 12px;">
                             초기화
                         </button>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-left: 10px;">
+                            <input type="checkbox" id="showHiddenOrders" onchange="loadBlendingOrders()" style="width:16px; height:16px;">
+                            <span>숨긴 계획 포함 보기</span>
+                        </label>
                     </div>
                 </div>
                 <div id="blendingOrdersList" class="scrollable-list"></div>
