@@ -3730,183 +3730,203 @@ def get_blending_order_progress(order_id):
         return jsonify({'success': False, 'message': str(e)})
 
 # ============================================
-# 관리자 비밀번호 검증
+# 사용자 인증 / 권한 관리 (ID/PW 방식)
 # ============================================
 
-def check_admin_mode_password(password):
-    """관리자 모드 진입용 비밀번호 확인 (admin_password.txt)"""
+USERS_FILE = os.path.join(os.path.dirname(__file__), 'users.json')
+PERMISSIONS_FILE = os.path.join(os.path.dirname(__file__), 'permissions.json')
+
+ALL_MENUS = ['dashboard', 'incoming', 'blending-orders', 'blending',
+             'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin']
+
+def _hash_pw(password):
     import hashlib
-    import os
+    return hashlib.sha256(password.encode()).hexdigest()
 
-    password_file = os.path.join(os.path.dirname(__file__), 'admin_password.txt')
-
-    # 파일이 없으면 초기 비밀번호(admin1234) 생성
-    if not os.path.exists(password_file):
-        default_password = "admin1234"
-        hashed = hashlib.sha256(default_password.encode()).hexdigest()
-        with open(password_file, 'w') as f:
-            f.write(hashed)
-
-    # 저장된 해시 읽기
-    with open(password_file, 'r') as f:
-        stored_hash = f.read().strip()
-
-    # 입력된 비밀번호 해시화
-    input_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    # 비교
-    return input_hash == stored_hash
-    """관리자 모드 진입용 비밀번호 확인 (admin_password.txt)"""
-    import hashlib
-    import os
-
-    password_file = os.path.join(os.path.dirname(__file__), 'admin_password.txt')
-
-    # 파일이 없으면 초기 비밀번호(admin1234) 생성
-    if not os.path.exists(password_file):
-        default_password = "admin1234"
-        hashed = hashlib.sha256(default_password.encode()).hexdigest()
-        with open(password_file, 'w') as f:
-            f.write(hashed)
-
-    # 저장된 해시 읽기
-    with open(password_file, 'r') as f:
-        stored_hash = f.read().strip()
-
-    # 입력된 비밀번호 해시화
-    input_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    # 비교
-    return input_hash == stored_hash
-
-
-# 역할별 비밀번호 저장 (파일 기반)
-ROLE_PASSWORD_FILE = os.path.join(os.path.dirname(__file__), 'role_passwords.json')
-ROLE_PASSWORD_DEFAULTS = {
-    'production': '1234',
-    'quality': '1234',
-    'rnd': '1234',
-    'production_management': '1234',
-    'program_admin': '0793',
-}
-
-
-def load_role_passwords():
+def load_users():
     import json
-    import hashlib
-    if not os.path.exists(ROLE_PASSWORD_FILE):
-        # 초기값 저장
-        data = {role: hashlib.sha256(password.encode()).hexdigest() for role, password in ROLE_PASSWORD_DEFAULTS.items()}
-        with open(ROLE_PASSWORD_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return data
+    if not os.path.exists(USERS_FILE):
+        default = {'cashup': {'password': _hash_pw('1234'), 'name': '프로그램관리자'}}
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(default, f, ensure_ascii=False, indent=2)
+        return default
+    with open(USERS_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-    with open(ROLE_PASSWORD_FILE, 'r', encoding='utf-8') as f:
-        try:
-            data = json.load(f)
-        except Exception:
-            data = {}
+def save_users(data):
+    import json
+    with open(USERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # 누락 항목 기본값으로 채우기
-    updated = False
-    for role, pw in ROLE_PASSWORD_DEFAULTS.items():
-        if role not in data:
-            data[role] = hashlib.sha256(pw.encode()).hexdigest()
-            updated = True
-    if updated:
-        with open(ROLE_PASSWORD_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    return data
+def load_permissions():
+    import json
+    if not os.path.exists(PERMISSIONS_FILE):
+        default = {'cashup': ALL_MENUS[:]}
+        with open(PERMISSIONS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(default, f, ensure_ascii=False, indent=2)
+        return default
+    with open(PERMISSIONS_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
+def save_permissions(data):
+    import json
+    with open(PERMISSIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def check_role_password(role, password):
-    import hashlib
-    role = role.strip().lower()
-    if role not in ROLE_PASSWORD_DEFAULTS:
-        return False
-    data = load_role_passwords()
-    stored_hash = data.get(role, '')
-    return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+def is_program_admin(user_id):
+    perms = load_permissions()
+    return set(perms.get(user_id, [])) == set(ALL_MENUS) and user_id == 'cashup'
 
 
-@app.route('/api/verify-role-login', methods=['POST'])
-def verify_role_login():
+@app.route('/api/login', methods=['POST'])
+def login():
+    """ID/PW 로그인"""
     try:
         data = request.get_json() or {}
-        role = (data.get('role') or '').strip().lower()
+        user_id = (data.get('userId') or '').strip()
         password = data.get('password', '')
 
-        if role not in ROLE_PASSWORD_DEFAULTS:
-            return jsonify({'success': False, 'message': '알 수 없는 부서입니다.'})
+        if not user_id or not password:
+            return jsonify({'success': False, 'message': 'ID와 비밀번호를 입력하세요.'})
 
-        if check_role_password(role, password):
-            return jsonify({'success': True, 'message': '로그인 성공'})
-        return jsonify({'success': False, 'message': '부서 또는 비밀번호가 일치하지 않습니다.'})
+        users = load_users()
+        user = users.get(user_id)
+
+        if not user or user['password'] != _hash_pw(password):
+            return jsonify({'success': False, 'message': 'ID 또는 비밀번호가 올바르지 않습니다.'})
+
+        perms = load_permissions()
+        allowed_menus = perms.get(user_id, [])
+
+        return jsonify({
+            'success': True,
+            'userId': user_id,
+            'name': user.get('name', user_id),
+            'allowedMenus': allowed_menus,
+            'isProgramAdmin': user_id == 'cashup'
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
 
-@app.route('/api/role-password', methods=['PUT'])
-def update_role_password():
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    """사용자 목록 조회 (프로그램관리자 전용)"""
+    try:
+        users = load_users()
+        perms = load_permissions()
+        result = []
+        for uid, info in users.items():
+            result.append({
+                'userId': uid,
+                'name': info.get('name', uid),
+                'allowedMenus': perms.get(uid, [])
+            })
+        return jsonify({'success': True, 'users': result})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    """사용자 추가 (프로그램관리자 전용)"""
     try:
         data = request.get_json() or {}
-        role = (data.get('role') or '').strip().lower()
+        user_id = (data.get('userId') or '').strip()
         password = data.get('password', '')
-        admin_pass = data.get('adminPassword', '')
+        name = (data.get('name') or '').strip()
 
-        if not check_admin_mode_password(admin_pass):
-            return jsonify({'success': False, 'message': '관리자모드 비밀번호가 틀렸습니다.'})
-
-        if role not in ROLE_PASSWORD_DEFAULTS:
-            return jsonify({'success': False, 'message': '알 수 없는 부서입니다.'})
-
+        if not user_id or not password or not name:
+            return jsonify({'success': False, 'message': 'ID, 이름, 비밀번호를 모두 입력하세요.'})
         if len(password) < 4:
             return jsonify({'success': False, 'message': '비밀번호는 최소 4자 이상이어야 합니다.'})
 
-        import hashlib
-        import json
+        users = load_users()
+        if user_id in users:
+            return jsonify({'success': False, 'message': '이미 존재하는 ID입니다.'})
 
-        passwords = load_role_passwords()
-        passwords[role] = hashlib.sha256(password.encode()).hexdigest()
+        users[user_id] = {'password': _hash_pw(password), 'name': name}
+        save_users(users)
 
-        with open(ROLE_PASSWORD_FILE, 'w', encoding='utf-8') as f:
-            json.dump(passwords, f, ensure_ascii=False, indent=2)
+        perms = load_permissions()
+        perms[user_id] = []
+        save_permissions(perms)
 
+        return jsonify({'success': True, 'message': f'사용자 "{name}"이(가) 추가되었습니다.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/password', methods=['PUT'])
+def change_user_password(user_id):
+    """비밀번호 변경 (프로그램관리자 전용)"""
+    try:
+        data = request.get_json() or {}
+        new_password = data.get('password', '')
+
+        if len(new_password) < 4:
+            return jsonify({'success': False, 'message': '비밀번호는 최소 4자 이상이어야 합니다.'})
+
+        users = load_users()
+        if user_id not in users:
+            return jsonify({'success': False, 'message': '존재하지 않는 사용자입니다.'})
+
+        users[user_id]['password'] = _hash_pw(new_password)
+        save_users(users)
         return jsonify({'success': True, 'message': '비밀번호가 변경되었습니다.'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
 
-@app.route('/api/role-passwords', methods=['GET'])
-def get_role_passwords():
+@app.route('/api/users/<user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    """사용자 삭제 (프로그램관리자 전용, cashup 삭제 불가)"""
     try:
-        # 관리자 모드 비밀번호 없이 정보를 그대로 제공하지 않도록 최소한 형태로
-        # (페이지 권한 UI에는 저장된값이 필요 없으므로 역할 리스트만 제공)
-        return jsonify({'success': True, 'data': list(ROLE_PASSWORD_DEFAULTS.keys())})
+        if user_id == 'cashup':
+            return jsonify({'success': False, 'message': '프로그램관리자는 삭제할 수 없습니다.'})
+
+        users = load_users()
+        if user_id not in users:
+            return jsonify({'success': False, 'message': '존재하지 않는 사용자입니다.'})
+
+        del users[user_id]
+        save_users(users)
+
+        perms = load_permissions()
+        if user_id in perms:
+            del perms[user_id]
+            save_permissions(perms)
+
+        return jsonify({'success': True, 'message': '사용자가 삭제되었습니다.'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
 
-@app.route('/api/admin/verify-password', methods=['POST'])
-def verify_admin_password():
-    """관리자 모드 진입 비밀번호 검증 (admin_password.txt 사용)"""
+@app.route('/api/permissions/<user_id>', methods=['PUT'])
+def update_permissions(user_id):
+    """사용자 메뉴 권한 업데이트 (프로그램관리자 전용)"""
     try:
-        data = request.get_json()
-        input_password = data.get('password', '')
+        data = request.get_json() or {}
+        allowed_menus = data.get('allowedMenus', [])
 
-        if check_admin_mode_password(input_password):
-            return jsonify({
-                'success': True,
-                'message': '비밀번호가 확인되었습니다.'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': '비밀번호가 일치하지 않습니다.'
-            })
+        users = load_users()
+        if user_id not in users:
+            return jsonify({'success': False, 'message': '존재하지 않는 사용자입니다.'})
 
+        perms = load_permissions()
+        perms[user_id] = [m for m in allowed_menus if m in ALL_MENUS]
+        save_permissions(perms)
+        return jsonify({'success': True, 'message': '권한이 저장되었습니다.'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/menus', methods=['GET'])
+def get_all_menus():
+    """전체 메뉴 목록"""
+    return jsonify({'success': True, 'menus': ALL_MENUS})
+
+
 
 # ============================================
 # 대시보드 API

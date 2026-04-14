@@ -3,30 +3,32 @@
 // API Base URL
 const API_BASE = '';
 
-const ROLE_ALLOWED_PAGES = {
-    production: ['dashboard', 'incoming', 'blending-orders', 'blending', 'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin'],
-    quality: ['dashboard', 'incoming', 'blending-orders', 'blending', 'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin'],
-    rnd: ['dashboard', 'incoming', 'blending-orders', 'blending', 'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin'],
-    production_management: ['dashboard', 'incoming', 'blending-orders', 'blending', 'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin'],
-    program_admin: ['dashboard', 'incoming', 'blending-orders', 'blending', 'blending-log', 'mixing', 'search', 'rework', 'traceability', 'admin'],
-};
-
-let currentRole = 'production';
-
-function isPageAllowed(pageName) {
-    // 모든 메뉴 접근 허용 (부서별 메뉴 숨김/비활성화 원복 요청 대응)
-    return true;
-}
+// 현재 로그인 사용자 정보
+let currentUserId = '';
+let currentUserName = '';
+let currentAllowedMenus = [];
+let currentIsProgramAdmin = false;
 
 function setMenuByRole() {
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+        const page = item.getAttribute('data-page');
+        const allowed = currentAllowedMenus.includes(page);
+        if (allowed) {
+            item.style.opacity = '1';
+            item.style.pointerEvents = 'auto';
+            item.style.cursor = 'pointer';
+        } else {
+            item.style.opacity = '0.35';
+            item.style.pointerEvents = 'none';
+            item.style.cursor = 'not-allowed';
+        }
         item.style.display = 'flex';
     });
-    // 관리자모드 탭은 항상 표시
-    const adminNav = document.querySelector('.nav-item[data-page="admin"]');
-    if (adminNav) {
-        adminNav.style.display = 'flex';
-    }
+    // 프로그램관리자 전용 탭 표시
+    const tabPerms = document.getElementById('adminTabPermissions');
+    const tabUserMgmt = document.getElementById('adminTabUserMgmt');
+    if (tabPerms) tabPerms.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
+    if (tabUserMgmt) tabUserMgmt.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
 }
 
 // ============================================
@@ -44,34 +46,85 @@ function startApp() {
     const splashLoading = document.getElementById('splashLoading');
     const splashStartBtn = document.getElementById('splashStartBtn');
 
-    // 시작 버튼 숨기고 로딩 표시
     splashStartBtn.style.display = 'none';
     splashLoading.style.display = 'flex';
 
-    // API 호출로 서버 연결 확인 + 리소스 로딩 대기
-    const apiCheck = fetch(API_BASE + '/api/admin/recipes').then(r => r.json()).catch(() => null);
     const readyCheck = new Promise(resolve => {
         if (document.readyState === 'complete') resolve();
         else window.addEventListener('load', resolve);
     });
 
-    Promise.all([apiCheck, readyCheck]).then(() => {
-        // 최소 0.8초 로딩 표시 (너무 빨리 사라지지 않도록)
+    readyCheck.then(() => {
         setTimeout(() => {
-            // 숨김 스타일 제거 → 사이드바+메인 보이기
-            const hideStyle = document.getElementById('splash-hide-main');
-            if (hideStyle) hideStyle.remove();
-
-            // 스플래시 페이드아웃
             const splash = document.getElementById('splashScreen');
             splash.classList.add('fade-out');
             setTimeout(() => splash.remove(), 500);
 
-            // 자동 로그인 후 메뉴 설정 및 대시보드 이동
-            setMenuByRole();
-            showPage('dashboard');
+            // 스플래시 후 로그인 오버레이 표시
+            const overlay = document.getElementById('loginOverlay');
+            if (overlay) overlay.style.display = 'flex';
+
+            // Enter 키 로그인
+            const pwInput = document.getElementById('loginPassword');
+            if (pwInput) {
+                pwInput.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') handleLogin();
+                });
+            }
+            const idInput = document.getElementById('loginUserId');
+            if (idInput) {
+                idInput.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') handleLogin();
+                });
+            }
         }, 800);
     });
+}
+
+async function handleLogin() {
+    const userId = (document.getElementById('loginUserId')?.value || '').trim();
+    const password = document.getElementById('loginPassword')?.value || '';
+    const errorEl = document.getElementById('loginError');
+
+    if (!userId || !password) {
+        if (errorEl) errorEl.textContent = 'ID와 비밀번호를 입력하세요.';
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, password })
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+            if (errorEl) errorEl.textContent = data.message || '로그인 실패';
+            return;
+        }
+
+        // 로그인 성공
+        currentUserId = data.userId;
+        currentUserName = data.name;
+        currentAllowedMenus = data.allowedMenus || [];
+        currentIsProgramAdmin = data.isProgramAdmin || false;
+
+        // 오버레이 닫기 + 메인 보이기
+        const overlay = document.getElementById('loginOverlay');
+        if (overlay) overlay.style.display = 'none';
+        const hideStyle = document.getElementById('splash-hide-main');
+        if (hideStyle) hideStyle.remove();
+
+        setMenuByRole();
+
+        // 첫 번째 허용 메뉴로 이동
+        const first = currentAllowedMenus[0] || 'dashboard';
+        showPage(first);
+
+    } catch (err) {
+        if (errorEl) errorEl.textContent = '서버 오류: ' + err.message;
+    }
 }
 
 // 현재 검사 데이터
@@ -307,46 +360,14 @@ function t(key) {
         }
 
         // ============================================
-        // 관리자 비밀번호 확인
+        // 관리자 페이지 진입
         // ============================================
-        async function verifyAdminPassword() {
-            const password = prompt('관리자 비밀번호를 입력하세요:');
-
-            if (password === null) {
-                // 사용자가 취소를 클릭
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/api/admin/verify-password`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ password: password })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    // 비밀번호 확인 성공 - 관리자 페이지로 이동
-                    showAdminPageDirect();
-                } else {
-                    alert('비밀번호가 일치하지 않습니다.');
-                }
-            } catch (error) {
-                alert('오류: ' + error.message);
-            }
-        }
-
         function showAdminPageDirect() {
-            // 비밀번호 확인 후 직접 관리자 페이지 표시
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
             document.getElementById('admin').classList.add('active');
 
-            // 네비게이션 active 상태 업데이트
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.classList.remove('active');
             });
@@ -1665,57 +1686,193 @@ function t(key) {
 
         // 관리자 페이지 로드
         async function loadAdminPage() {
-                    await loadPowderSpecs(powderSpecMode);
-            // particlePowderSelect 관련 DOM이 없는 경우(템플릿에 미구현) 로딩 건너뛰기
+            await loadPowderSpecs(powderSpecMode);
             if (document.getElementById('particlePowderSelect')) {
                 await loadParticlePowderList();
             }
             await loadInspectors();
             await loadOperators();
             await loadProductRecipes();
-            renderRolePasswordManagement();
+            if (currentIsProgramAdmin) {
+                await loadPermissionsGrid();
+                await loadUserIdList();
+            }
         }
 
-        async function updateRolePassword() {
-            const role = document.getElementById('rolePasswordRole').value;
-            const password = document.getElementById('rolePasswordNew').value;
-            const adminPassword = prompt('관리자 모드 비밀번호를 입력하세요(비밀번호 변경 권한 검증용):');
-            if (!adminPassword) {
-                alert('관리자 모드 비밀번호를 입력해야 합니다.');
-                return;
-            }
+        // ============================================
+        // 접속권한 설정 (프로그램관리자 전용)
+        // ============================================
 
-            if (!password || password.length < 4) {
-                alert('비밀번호는 최소 4자 이상이어야 합니다.');
-                return;
+        const MENU_LABELS = {
+            'dashboard': '대시보드',
+            'incoming': '수입분말검사',
+            'blending-orders': '배합작업계획등록',
+            'blending': '배합작업',
+            'blending-log': '배합작업현황조회',
+            'mixing': '배합분말검사',
+            'search': '검사결과조회',
+            'rework': 'REWORK',
+            'traceability': '추적성조회',
+            'admin': '관리자모드'
+        };
+
+        async function loadPermissionsGrid() {
+            const container = document.getElementById('permissionsGrid');
+            if (!container) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/users`);
+                const data = await resp.json();
+                if (!data.success) return;
+
+                const menus = Object.keys(MENU_LABELS);
+                let html = '<table style="border-collapse:collapse; width:100%; font-size:0.9em;">';
+                html += '<thead><tr style="background:var(--bg-elevated);">';
+                html += '<th style="padding:10px 14px; text-align:left; border-bottom:1px solid #444;">사용자</th>';
+                menus.forEach(m => {
+                    html += `<th style="padding:8px 6px; text-align:center; border-bottom:1px solid #444; white-space:nowrap;">${MENU_LABELS[m]}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+
+                data.users.forEach(user => {
+                    const allowed = user.allowedMenus || [];
+                    html += `<tr style="border-bottom:1px solid #333;">`;
+                    html += `<td style="padding:10px 14px; font-weight:600;">${user.name}<br><span style="font-size:0.85em;color:var(--text-secondary);">${user.userId}</span></td>`;
+                    menus.forEach(m => {
+                        const checked = allowed.includes(m);
+                        const bg = checked ? '#2a5a2a' : '#2a2a2a';
+                        const txt = checked ? '✓' : '';
+                        html += `<td style="text-align:center; padding:6px;">
+                            <div onclick="togglePermission('${user.userId}','${m}',this)"
+                                 data-checked="${checked}"
+                                 style="width:32px;height:32px;margin:auto;border-radius:6px;background:${bg};border:1px solid #555;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.1em;color:#7fff7f;">
+                                ${txt}
+                            </div>
+                        </td>`;
+                    });
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = '<div class="empty-message">권한 정보를 불러올 수 없습니다.</div>';
             }
+        }
+
+        async function togglePermission(userId, menu, el) {
+            const checked = el.getAttribute('data-checked') === 'true';
+            const newChecked = !checked;
+            el.setAttribute('data-checked', newChecked);
+            el.style.background = newChecked ? '#2a5a2a' : '#2a2a2a';
+            el.innerHTML = newChecked ? '✓' : '';
+
+            // 해당 사용자의 현재 전체 권한 수집
+            const row = el.closest('tr');
+            const cells = row.querySelectorAll('[data-checked]');
+            const menus = Object.keys(MENU_LABELS);
+            const allowedMenus = [];
+            cells.forEach((cell, i) => {
+                if (cell.getAttribute('data-checked') === 'true') allowedMenus.push(menus[i]);
+            });
 
             try {
-                const response = await fetch(`${API_BASE}/api/role-password`, {
+                await fetch(`${API_BASE}/api/permissions/${userId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ role, password, adminPassword })
+                    body: JSON.stringify({ allowedMenus })
                 });
-                const data = await response.json();
-                if (!data.success) {
-                    alert('변경 실패: ' + data.message);
-                    return;
-                }
-                alert('비밀번호가 업데이트되었습니다.');
-                document.getElementById('rolePasswordNew').value = '';
-            } catch (error) {
-                alert('서버 오류: ' + error.message);
+            } catch (e) {
+                console.error('권한 저장 실패:', e);
             }
         }
 
-        function renderRolePasswordManagement() {
-            const container = document.getElementById('rolePasswordManagement');
+        // ============================================
+        // 사용자 관리 (프로그램관리자 전용)
+        // ============================================
+
+        async function loadUserIdList() {
+            const container = document.getElementById('userIdList');
             if (!container) return;
-            if (currentRole !== 'program_admin') {
-                container.style.display = 'none';
-                return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/users`);
+                const data = await resp.json();
+                if (!data.success) return;
+
+                let html = '<table style="border-collapse:collapse; width:100%;">';
+                html += '<thead><tr style="background:var(--bg-elevated);"><th style="padding:10px;text-align:left;">ID</th><th style="padding:10px;text-align:left;">이름</th><th style="padding:10px;text-align:center;">비밀번호 변경</th><th style="padding:10px;text-align:center;">삭제</th></tr></thead><tbody>';
+
+                data.users.forEach(user => {
+                    const isCashup = user.userId === 'cashup';
+                    html += `<tr style="border-bottom:1px solid #333;">
+                        <td style="padding:10px; font-weight:600;">${user.userId}</td>
+                        <td style="padding:10px;">${user.name}</td>
+                        <td style="padding:10px; text-align:center;">
+                            <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+                                <input type="password" id="pw_${user.userId}" placeholder="새 비밀번호" style="padding:6px 8px; border:1px solid #555; border-radius:4px; background:#1a1a1a; color:#eee; width:140px;">
+                                <button class="btn secondary" style="padding:6px 10px;" onclick="changeUserPassword('${user.userId}')">변경</button>
+                            </div>
+                        </td>
+                        <td style="padding:10px; text-align:center;">
+                            ${isCashup ? '<span style="color:#666;">삭제불가</span>' : `<button class="btn danger" style="padding:6px 10px;" onclick="deleteUser('${user.userId}')">삭제</button>`}
+                        </td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = '<div class="empty-message">사용자 목록을 불러올 수 없습니다.</div>';
             }
-            container.style.display = 'block';
+        }
+
+        async function addUser() {
+            const userId = (document.getElementById('newUserId')?.value || '').trim();
+            const name = (document.getElementById('newUserName')?.value || '').trim();
+            const password = document.getElementById('newUserPassword')?.value || '';
+            if (!userId || !name || !password) { alert('ID, 이름, 비밀번호를 모두 입력하세요.'); return; }
+            try {
+                const resp = await fetch(`${API_BASE}/api/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, name, password })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert('추가 실패: ' + data.message); return; }
+                alert(data.message);
+                document.getElementById('newUserId').value = '';
+                document.getElementById('newUserName').value = '';
+                document.getElementById('newUserPassword').value = '';
+                await loadUserIdList();
+                await loadPermissionsGrid();
+            } catch (e) { alert('오류: ' + e.message); }
+        }
+
+        async function changeUserPassword(userId) {
+            const pw = document.getElementById(`pw_${userId}`)?.value || '';
+            if (pw.length < 4) { alert('비밀번호는 최소 4자 이상이어야 합니다.'); return; }
+            try {
+                const resp = await fetch(`${API_BASE}/api/users/${userId}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert('변경 실패: ' + data.message); return; }
+                alert(data.message);
+                document.getElementById(`pw_${userId}`).value = '';
+            } catch (e) { alert('오류: ' + e.message); }
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm(`사용자 "${userId}"를 삭제하시겠습니까?`)) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/users/${userId}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (!data.success) { alert('삭제 실패: ' + data.message); return; }
+                alert(data.message);
+                await loadUserIdList();
+                await loadPermissionsGrid();
+            } catch (e) { alert('오류: ' + e.message); }
         }
 
         // ============================================

@@ -54,6 +54,24 @@
         </div>
     </div>
 
+    <!-- 로그인 오버레이 -->
+    <div id="loginOverlay" class="login-overlay" style="display:flex;">
+        <div class="login-box">
+            <h2>배합공정 관리시스템</h2>
+            <p>ID와 비밀번호를 입력하세요.</p>
+            <div class="form-row">
+                <label for="loginUserId">ID</label>
+                <input id="loginUserId" type="text" placeholder="ID 입력" maxlength="32" autocomplete="username">
+            </div>
+            <div class="form-row">
+                <label for="loginPassword">비밀번호</label>
+                <input id="loginPassword" type="password" placeholder="비밀번호 입력" maxlength="32" autocomplete="current-password">
+            </div>
+            <button class="btn" onclick="handleLogin()" style="width:100%; margin-top:8px;">로그인</button>
+            <div id="loginError" class="login-error"></div>
+        </div>
+    </div>
+
     <!-- 사이드바 네비게이션 -->
     <div class="sidebar">
         <div class="sidebar-header">
@@ -722,6 +740,12 @@
                 <button class="admin-tab" onclick="showAdminTab('user-mgmt')">
                     <span data-i18n="adminTabUserMgmt">검사자&작업자관리</span>
                 </button>
+                <button class="admin-tab" id="adminTabPermissions" onclick="showAdminTab('permissions-mgmt')" style="display:none;">
+                    <span>접속권한 설정</span>
+                </button>
+                <button class="admin-tab" id="adminTabUserMgmt" onclick="showAdminTab('user-id-mgmt')" style="display:none;">
+                    <span>사용자 관리</span>
+                </button>
             </div>
 
             <!-- 탭 1: 분말사양관리 -->
@@ -1017,32 +1041,43 @@
                 <div id="operatorList"></div>
             </div>
 
-            <!-- 프로그램관리자만 사용자 역할 비밀번호 관리 -->
-            <div class="card" id="rolePasswordManagement" style="display: none;">
-                <div class="card-title">🔐 <span>부서별 로그인 비밀번호 관리 (프로그램관리자 전용)</span></div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div class="form-group" style="flex: 1; min-width: 220px;">
-                        <label for="rolePasswordRole">부서</label>
-                        <select id="rolePasswordRole" style="width: 100%; padding: 10px; border: 1px solid var(--border-secondary); border-radius: 5px;">
-                            <option value="production">생산팀</option>
-                            <option value="quality">품질관리팀</option>
-                            <option value="rnd">연구개발팀</option>
-                            <option value="production_management">생산관리팀</option>
-                            <option value="program_admin">프로그램관리자</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="flex: 1; min-width: 240px;">
-                        <label for="rolePasswordNew">새 비밀번호</label>
-                        <input id="rolePasswordNew" type="password" placeholder="새 비밀번호" style="width:100%; padding:10px; border:1px solid var(--border-secondary); border-radius:5px;">
-                    </div>
-                    <div style="margin-top: 24px;">
-                        <button class="btn" onclick="updateRolePassword()">비밀번호 변경</button>
-                    </div>
-                </div>
-                <p style="margin-top: 10px; color: var(--text-secondary); font-size: .9em;">관리자 모드 비밀번호를 입력해야 변경됩니다.</p>
-            </div>
             </div>
             <!-- 탭 2 끝 -->
+
+            <!-- 탭 4: 접속권한 설정 (프로그램관리자 전용) -->
+            <div id="permissions-mgmt-tab" class="admin-tab-content">
+                <div class="card">
+                    <div class="card-title">🔒 접속권한 설정 <span style="font-size:0.85em; color:var(--text-secondary);">(프로그램관리자 전용)</span></div>
+                    <div id="permissionsGrid" style="overflow-x:auto;"></div>
+                </div>
+            </div>
+            <!-- 탭 4 끝 -->
+
+            <!-- 탭 5: 사용자 관리 (프로그램관리자 전용) -->
+            <div id="user-id-mgmt-tab" class="admin-tab-content">
+                <div class="card">
+                    <div class="card-title">👤 사용자 관리 <span style="font-size:0.85em; color:var(--text-secondary);">(프로그램관리자 전용)</span></div>
+                    <!-- 사용자 추가 폼 -->
+                    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:20px; padding:16px; background:var(--bg-elevated); border-radius:8px;">
+                        <div class="form-group" style="min-width:120px;">
+                            <label>ID</label>
+                            <input type="text" id="newUserId" placeholder="ID" style="padding:8px; border:1px solid var(--border-secondary); border-radius:4px; width:100%;">
+                        </div>
+                        <div class="form-group" style="min-width:120px;">
+                            <label>이름</label>
+                            <input type="text" id="newUserName" placeholder="이름(부서명)" style="padding:8px; border:1px solid var(--border-secondary); border-radius:4px; width:100%;">
+                        </div>
+                        <div class="form-group" style="min-width:120px;">
+                            <label>비밀번호</label>
+                            <input type="password" id="newUserPassword" placeholder="비밀번호" style="padding:8px; border:1px solid var(--border-secondary); border-radius:4px; width:100%;">
+                        </div>
+                        <button class="btn" onclick="addUser()" style="padding:8px 16px;">추가</button>
+                    </div>
+                    <!-- 사용자 목록 -->
+                    <div id="userIdList"></div>
+                </div>
+            </div>
+            <!-- 탭 5 끝 -->
 
             <!-- 탭 3: 배합규격서관리 -->
             <div id="recipe-mgmt-tab" class="admin-tab-content">
