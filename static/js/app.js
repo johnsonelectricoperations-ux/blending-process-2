@@ -4381,8 +4381,8 @@ function t(key) {
                         window.onload = function() {
                             new QRCode(document.getElementById('qrcode'), {
                                 text: '${qrValue}',
-                                width: 55,
-                                height: 55,
+                                width: 50,
+                                height: 50,
                                 colorDark: '#000000',
                                 colorLight: '#ffffff',
                                 correctLevel: QRCode.CorrectLevel.H
