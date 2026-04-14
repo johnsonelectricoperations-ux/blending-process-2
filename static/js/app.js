@@ -8,6 +8,7 @@ let currentUserId = '';
 let currentUserName = '';
 let currentAllowedMenus = [];
 let currentIsProgramAdmin = false;
+let currentRole = 'program_admin'; // 기존 코드 호환용
 
 function setMenuByRole() {
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
@@ -109,6 +110,7 @@ async function handleLogin() {
         currentUserName = data.name;
         currentAllowedMenus = data.allowedMenus || [];
         currentIsProgramAdmin = data.isProgramAdmin || false;
+        currentRole = data.isProgramAdmin ? 'program_admin' : data.userId;
 
         // 오버레이 닫기 + 메인 보이기
         const overlay = document.getElementById('loginOverlay');
@@ -256,21 +258,11 @@ function t(key) {
         // ============================================
         function showPage(pageName) {
             if (pageName === 'admin') {
-                verifyAdminPassword();
+                showAdminPageDirect();
                 return;
             }
 
-            if (pageName === 'rework') {
-                if (!isPageAllowed('rework')) {
-                    alert('현재 부서는 REWORK 메뉴 접근 권한이 없습니다.');
-                    return;
-                }
-                showComingSoon('REWORK');
-                return;
-            }
-
-            if (!isPageAllowed(pageName)) {
-                alert('현재 부서는 이 메뉴에 접근할 수 없습니다.');
+            if (!currentAllowedMenus.includes(pageName)) {
                 return;
             }
 
