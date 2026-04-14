@@ -4337,7 +4337,7 @@ function t(key) {
                     <title>라벨 인쇄</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body { width: 40mm; height: 30mm; background: #fff; }
+                        body { width: 40mm; height: 30mm; background: #fff; display: flex; justify-content: center; align-items: center; }
                         .label {
                             width: 40mm;
                             height: 30mm;
@@ -4351,14 +4351,14 @@ function t(key) {
                             padding: 1mm;
                         }
                         .product-name {
-                            font-size: 16pt;
+                            font-size: 15.2pt;
                             font-weight: 700;
                             text-align: center;
                             word-break: break-all;
                             line-height: 1.2;
                         }
                         .lot-no {
-                            font-size: 13pt;
+                            font-size: 12.35pt;
                             font-weight: 600;
                             text-align: center;
                         }
