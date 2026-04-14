@@ -4337,7 +4337,8 @@ function t(key) {
                     <title>라벨 인쇄</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body { width: 40mm; height: 30mm; background: #fff; display: flex; justify-content: center; align-items: center; }
+                        html { overflow: hidden; max-height: 30mm; }
+                        body { width: 40mm; height: 30mm; max-height: 30mm; overflow: hidden; background: #fff; display: flex; justify-content: center; align-items: center; }
                         .label {
                             width: 40mm;
                             height: 30mm;
