@@ -285,12 +285,14 @@ class PrintHandler(BaseHTTPRequestHandler):
             large_img = build_large_label_image(data)
             ok, msg = send_image_to_printer(large_img, cfg['large_printer'])
             results['large'] = 'OK' if ok else f'실패: {msg}'
+            print(f"[결과] 큰 라벨: {results['large']}")
 
             # 작은 라벨 출력
             print(f"[인쇄] 작은 라벨 → {cfg['small_printer']}")
             small_img = build_small_label_image(data)
             ok2, msg2 = send_image_to_printer(small_img, cfg['small_printer'])
             results['small'] = 'OK' if ok2 else f'실패: {msg2}'
+            print(f"[결과] 작은 라벨: {results['small']}")
 
             success = 'OK' in results['large'] and 'OK' in results['small']
             self.send_json(200, {'success': success, 'results': results})
@@ -328,6 +330,18 @@ if __name__ == '__main__':
     print(f"  상태 확인      : http://localhost:{port}/status")
     print("=" * 50)
     print("  종료하려면 Ctrl+C 를 누르세요.")
+    print()
+
+    # Windows 설치된 프린터 목록 출력
+    try:
+        import win32print
+        printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+        print("  [설치된 프린터 목록]")
+        for p in printers:
+            print(f"    - {p}")
+        print("=" * 50)
+    except Exception:
+        pass
     print()
 
     server = HTTPServer(('127.0.0.1', port), PrintHandler)
