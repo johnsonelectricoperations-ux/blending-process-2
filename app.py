@@ -881,15 +881,9 @@ def search_inspection_results():
 
 @app.route('/api/inspection-result/<powder_name>/<lot_number>', methods=['DELETE'])
 def delete_inspection_result(powder_name, lot_number):
-    """검사 결과 삭제 (품질관리팀 권한 필요)"""
+    """검사 결과 삭제"""
     try:
-        # 역할 권한 확인 (품질관리팀만 가능)
         data = request.get_json() or {}
-        user_role = data.get('userRole', '')
-
-        if user_role != 'quality':
-            return jsonify({'success': False, 'message': '품질관리팀만 검사결과를 삭제할 수 있습니다.'})
-
         category = data.get('category', 'incoming')
 
         with closing(get_db()) as conn:
@@ -2747,14 +2741,8 @@ def get_blending_work(work_id):
 
 @app.route('/api/blending/work/<int:work_id>', methods=['DELETE'])
 def delete_blending_work(work_id):
-    """배합 작업 삭제 (생산팀 권한 필요)"""
+    """배합 작업 삭제"""
     try:
-        # 역할 권한 확인 (생산팀만 가능)
-        data = request.get_json() or {}
-        user_role = data.get('userRole', '')
-
-        if user_role != 'production':
-            return jsonify({'success': False, 'message': '생산팀만 배합작업을 삭제할 수 있습니다.'})
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()

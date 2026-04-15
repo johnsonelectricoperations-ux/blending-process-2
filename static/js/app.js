@@ -1543,11 +1543,6 @@ function t(key) {
         }
 
         async function deleteInspectionResult(powderName, lotNumber, category) {
-            // 역할 권한 확인 (품질관리팀만 가능)
-            if (currentRole !== 'quality') {
-                alert('품질관리팀만 검사결과를 삭제할 수 있습니다.');
-                return;
-            }
 
             if (!confirm(`검사결과를 삭제하시겠습니까?\n분말명: ${powderName}\nLOT: ${lotNumber}`)) {
                 return;
@@ -1557,7 +1552,7 @@ function t(key) {
                 const response = await fetch(`${API_BASE}/api/inspection-result/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userRole: currentRole, category: category })
+                    body: JSON.stringify({ category: category })
                 });
 
                 const data = await response.json();
@@ -4478,11 +4473,6 @@ function t(key) {
         }
 
         async function deleteBlendingWork(workId, batchLot) {
-            // 역할 권한 확인 (생산팀만 가능)
-            if (currentRole !== 'production') {
-                alert('생산팀만 배합작업을 삭제할 수 있습니다.');
-                return;
-            }
 
             if (!confirm(`배합 LOT "${batchLot}"를 삭제하시겠습니까?`)) {
                 return;
@@ -4492,7 +4482,7 @@ function t(key) {
                 const response = await fetch(`${API_BASE}/api/blending/work/${workId}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userRole: currentRole })
+                    body: JSON.stringify({})
                 });
 
                 const data = await response.json();
