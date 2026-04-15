@@ -265,7 +265,9 @@ function t(key) {
                 return;
             }
 
-            if (!currentAllowedMenus.includes(pageName)) {
+            // 내부 하위 페이지는 별도 권한 체크 없이 허용
+            const subPages = ['inspection', 'detail', 'auto-input'];
+            if (!subPages.includes(pageName) && !currentAllowedMenus.includes(pageName)) {
                 return;
             }
 
