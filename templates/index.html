@@ -571,6 +571,10 @@
 
                     <button class="btn secondary" style="margin-left:8px;" onclick="loadBlendingWorks()">조회</button>
                     <button class="btn" style="margin-left:6px;" onclick="resetBlendingFilters()">초기화</button>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-left:10px;">
+                        <input type="checkbox" id="showHiddenBlendingWorks" onchange="loadBlendingWorks()" style="width:16px; height:16px;">
+                        <span>숨긴 항목 포함 보기</span>
+                    </label>
                 </div>
 
                 <!-- 배합작업 목록 테이블 -->
@@ -669,6 +673,10 @@
                             <input type="date" id="searchDateTo">
                         </div>
                         <button type="submit" class="btn secondary" style="margin-bottom: 15px; white-space: nowrap;" data-i18n="searchButton">조회</button>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:15px; white-space:nowrap;">
+                            <input type="checkbox" id="showHiddenSearchResults" style="width:16px; height:16px;">
+                            <span>숨긴 항목 포함</span>
+                        </label>
                     </div>
                 </form>
             </div>

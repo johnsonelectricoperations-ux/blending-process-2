@@ -1475,12 +1475,14 @@ function t(key) {
             const dateTo = document.getElementById('searchDateTo').value;
 
             try {
+                const includeHiddenSearch = document.getElementById('showHiddenSearchResults')?.checked;
                 const params = new URLSearchParams();
                 if (category) params.append('category', category);
                 if (powderName) params.append('powderName', powderName);
                 if (lotNumber) params.append('lotNumber', lotNumber);
                 if (dateFrom) params.append('dateFrom', dateFrom);
                 if (dateTo) params.append('dateTo', dateTo);
+                if (includeHiddenSearch) params.append('include_hidden', 'true');
 
                 const response = await fetch(`${API_BASE}/api/search-results?${params}`);
                 const data = await response.json();
@@ -1491,24 +1493,31 @@ function t(key) {
                     let html = `<table><tr><th>${t('category')}</th><th>${t('powderName')}</th><th>${t('lotNumber')}</th><th>${t('inspector')}</th><th>${t('inspectionTime')}</th><th>${t('inspectionType')}</th><th>${t('finalResult')}</th><th>${t('detail')}</th></tr>`;
 
                     data.data.forEach(item => {
+                        const isHidden = item.is_hidden == 1;
                         const badgeClass = item.final_result === 'PASS' ? 'pass' : 'fail';
                         const categoryBadge = item.category === 'incoming'
                             ? `<span class="badge" style="background: #F07D00;">${t('incoming')}</span>`
                             : `<span class="badge" style="background: #F07D00;">${t('mixing')}</span>`;
+                        const hiddenBadge = isHidden ? ' <span style="background:#888;color:#fff;font-size:0.75em;padding:2px 6px;border-radius:4px;">숨김</span>' : '';
+                        const pName = item.powder_name.replace(/'/g, "\\'");
+                        const lNum = item.lot_number.replace(/'/g, "\\'");
 
                         html += `
-                            <tr>
+                            <tr style="${isHidden ? 'opacity:0.6;' : ''}">
                                 <td>${categoryBadge}</td>
                                 <td>${item.powder_name}</td>
-                                <td>${item.lot_number}</td>
+                                <td>${item.lot_number}${hiddenBadge}</td>
                                 <td>${item.inspector}</td>
                                 <td>${item.inspection_time}</td>
                                 <td>${item.inspection_type}</td>
                                 <td><span class="badge ${badgeClass}">${item.final_result}</span></td>
                                 <td>
                                     <div style="display: flex; gap: 5px;">
-                                        <button class="btn" onclick="viewDetail('${item.powder_name}', '${item.lot_number}')" style="padding: 6px 12px; font-size: 0.9em;">${t('view')}</button>
-                                        <button class="btn secondary" onclick="hideInspectionResult('${item.powder_name}', '${item.lot_number}', '${item.category}')" style="padding: 6px 12px; font-size: 0.9em;">숨기기</button>
+                                        <button class="btn" onclick="viewDetail('${pName}', '${lNum}')" style="padding: 6px 12px; font-size: 0.9em;">${t('view')}</button>
+                                        ${isHidden
+                                            ? `<button class="btn secondary" onclick="restoreInspectionResult('${pName}', '${lNum}', '${item.category}')" style="padding: 6px 12px; font-size: 0.9em;">복원</button>`
+                                            : `<button class="btn secondary" onclick="hideInspectionResult('${pName}', '${lNum}', '${item.category}')" style="padding: 6px 12px; font-size: 0.9em;">숨기기</button>`
+                                        }
                                     </div>
                                 </td>
                             </tr>
@@ -1543,7 +1552,7 @@ function t(key) {
         }
 
         async function hideInspectionResult(powderName, lotNumber, category) {
-            if (!confirm('해당 검사결과를 숨기시겠습니까?\n(관리자 메뉴에서 복원 가능)')) return;
+            if (!confirm('해당 검사결과를 숨기시겠습니까?')) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/inspection-result/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}/hide`, {
                     method: 'PATCH',
@@ -1551,10 +1560,23 @@ function t(key) {
                     body: JSON.stringify({ hide: true, hidden_by: currentUserId })
                 });
                 const data = await resp.json();
-                if (!data.success) {
-                    alert('숨기기 실패: ' + (data.message || ''));
-                    return;
-                }
+                if (!data.success) { alert('숨기기 실패: ' + (data.message || '')); return; }
+                document.getElementById('searchForm').dispatchEvent(new Event('submit'));
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        }
+
+        async function restoreInspectionResult(powderName, lotNumber, category) {
+            if (!confirm('해당 검사결과를 복원하시겠습니까?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/inspection-result/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}/hide`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hide: false })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert('복원 실패: ' + (data.message || '')); return; }
                 document.getElementById('searchForm').dispatchEvent(new Event('submit'));
             } catch (error) {
                 alert('오류: ' + error.message);
@@ -4372,11 +4394,14 @@ function t(key) {
                 const productName = document.getElementById('filterProductName') ? document.getElementById('filterProductName').value.trim() : '';
                 const batchLot = document.getElementById('filterBatchLot') ? document.getElementById('filterBatchLot').value.trim() : '';
 
+                const includeHiddenWorks = document.getElementById('showHiddenBlendingWorks')?.checked;
+
                 let url = `${API_BASE}/api/blending/works?status=${encodeURIComponent(statusFilter)}`;
                 if (completedDateFrom) url += `&completed_date_from=${encodeURIComponent(completedDateFrom)}`;
                 if (completedDateTo) url += `&completed_date_to=${encodeURIComponent(completedDateTo)}`;
                 if (productName) url += `&product_name=${encodeURIComponent(productName)}`;
                 if (batchLot) url += `&batch_lot=${encodeURIComponent(batchLot)}`;
+                if (includeHiddenWorks) url += `&include_hidden=true`;
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -4390,22 +4415,26 @@ function t(key) {
                 }
 
                 tbody.innerHTML = data.works.map(work => {
+                    const isHidden = work.is_hidden == 1;
                     const statusClass = work.status === 'completed' ? 'completed' : 'in-progress';
                     const statusText = work.status === 'completed' ? '완료' : '진행중';
                     const startTime = work.start_time ? new Date(work.start_time).toLocaleString('ko-KR') : '-';
                     const endTime = work.end_time ? new Date(work.end_time).toLocaleString('ko-KR') : '-';
+                    const hiddenBadge = isHidden ? ' <span style="background:#888;color:#fff;font-size:0.75em;padding:2px 6px;border-radius:4px;">숨김</span>' : '';
 
                     return `
-                        <tr>
+                        <tr style="${isHidden ? 'opacity:0.6;' : ''}">
                             <td>${work.work_order}</td>
                             <td>${work.product_name}</td>
-                            <td><strong>${work.batch_lot}</strong></td>
+                            <td><strong>${work.batch_lot}</strong>${hiddenBadge}</td>
                             <td>${work.operator || '-'}</td>
                             <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                             <td>${startTime}</td>
                             <td>${endTime}</td>
                             <td>
-                                ${work.status === 'completed' ?
+                                ${isHidden ?
+                                    `<button class="btn secondary" onclick="restoreBlendingWork(${work.id})" style="padding: 6px 12px; font-size: 0.9em;">복원</button>` :
+                                work.status === 'completed' ?
                                     `<div style="display: flex; gap: 5px;">
                                         <button class="btn" onclick="loadAutoInputPage(${work.id}, 'blending-log')" style="padding: 6px 12px; font-size: 0.9em; background:#F07D00; color:white; border:none; border-radius:4px;">
                                             입력현황
@@ -4492,7 +4521,7 @@ function t(key) {
         }
 
         async function hideBlendingWork(workId, batchLot) {
-            if (!confirm(`배합 LOT "${batchLot}"을(를) 숨기시겠습니까?\n(관리자 메뉴에서 복원 가능)`)) return;
+            if (!confirm(`배합 LOT "${batchLot}"을(를) 숨기시겠습니까?`)) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/blending/work/${workId}/hide`, {
                     method: 'PATCH',
@@ -4500,10 +4529,23 @@ function t(key) {
                     body: JSON.stringify({ hide: true, hidden_by: currentUserId })
                 });
                 const data = await resp.json();
-                if (!data.success) {
-                    alert('숨기기 실패: ' + (data.message || ''));
-                    return;
-                }
+                if (!data.success) { alert('숨기기 실패: ' + (data.message || '')); return; }
+                loadBlendingWorks();
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        }
+
+        async function restoreBlendingWork(workId) {
+            if (!confirm('해당 배합작업을 복원하시겠습니까?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/blending/work/${workId}/hide`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hide: false })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert('복원 실패: ' + (data.message || '')); return; }
                 loadBlendingWorks();
             } catch (error) {
                 alert('오류: ' + error.message);
