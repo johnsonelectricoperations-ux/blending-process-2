@@ -831,6 +831,7 @@ def search_inspection_results():
         lot_number = request.args.get('lotNumber', '')
         date_from = request.args.get('dateFrom', '')
         date_to = request.args.get('dateTo', '')
+        include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()
@@ -857,6 +858,9 @@ def search_inspection_results():
             if date_to:
                 query += ' AND inspection_time <= ?'
                 params.append(date_to + ' 23:59:59')
+
+            if not include_hidden:
+                query += ' AND (is_hidden IS NULL OR is_hidden = 0)'
 
             query += ' ORDER BY inspection_time DESC'
 
@@ -913,6 +917,30 @@ def delete_inspection_result(powder_name, lot_number):
                 'message': f'검사 결과가 삭제되었습니다. (분말: {powder_name}, LOT: {lot_number})'
             })
 
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/inspection-result/<powder_name>/<lot_number>/hide', methods=['PATCH'])
+def hide_inspection_result(powder_name, lot_number):
+    """검사결과 숨기기/복원"""
+    try:
+        data = request.get_json() or {}
+        hide = data.get('hide', True)
+        hidden_by = data.get('hidden_by', '')
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            if hide:
+                cursor.execute('''
+                    UPDATE inspection_result SET is_hidden=1, hidden_at=datetime('now','localtime'), hidden_by=?
+                    WHERE powder_name=? AND lot_number=?
+                ''', (hidden_by, powder_name, lot_number))
+            else:
+                cursor.execute('''
+                    UPDATE inspection_result SET is_hidden=0, hidden_at=NULL, hidden_by=NULL
+                    WHERE powder_name=? AND lot_number=?
+                ''', (powder_name, lot_number))
+            conn.commit()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -2339,10 +2367,36 @@ def ensure_blending_order_hidden_columns():
             cursor.execute('ALTER TABLE blending_order ADD COLUMN hidden_by VARCHAR(50)')
             conn.commit()
 
+def ensure_inspection_result_hidden_columns():
+    """inspection_result 테이블에 is_hidden 관련 컬럼 추가 (마이그레이션)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(inspection_result)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'is_hidden' not in columns:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN is_hidden INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN hidden_at TIMESTAMP')
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN hidden_by VARCHAR(50)')
+            conn.commit()
+
+def ensure_blending_work_hidden_columns():
+    """blending_work 테이블에 is_hidden 관련 컬럼 추가 (마이그레이션)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(blending_work)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'is_hidden' not in columns:
+            cursor.execute('ALTER TABLE blending_work ADD COLUMN is_hidden INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE blending_work ADD COLUMN hidden_at TIMESTAMP')
+            cursor.execute('ALTER TABLE blending_work ADD COLUMN hidden_by VARCHAR(50)')
+            conn.commit()
+
 # 서버 시작 시 테이블 보장
 ensure_product_spec_table()
 ensure_recipe_tolerance_columns()
 ensure_blending_order_hidden_columns()
+ensure_inspection_result_hidden_columns()
+ensure_blending_work_hidden_columns()
 
 
 @app.route('/api/admin/product-spec/rev', methods=['POST'])
@@ -2777,6 +2831,30 @@ def delete_blending_work(work_id):
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/api/blending/work/<int:work_id>/hide', methods=['PATCH'])
+def hide_blending_work(work_id):
+    """배합작업 숨기기/복원"""
+    try:
+        data = request.get_json() or {}
+        hide = data.get('hide', True)
+        hidden_by = data.get('hidden_by', '')
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            if hide:
+                cursor.execute('''
+                    UPDATE blending_work SET is_hidden=1, hidden_at=datetime('now','localtime'), hidden_by=?
+                    WHERE id=?
+                ''', (hidden_by, work_id))
+            else:
+                cursor.execute('''
+                    UPDATE blending_work SET is_hidden=0, hidden_at=NULL, hidden_by=NULL
+                    WHERE id=?
+                ''', (work_id,))
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 @app.route('/api/completed-lots', methods=['GET'])
 def get_completed_lots():
     """특정 분말의 수입검사 완료된 LOT 번호 목록 조회"""
@@ -3049,6 +3127,7 @@ def get_blending_works():
         batch_lot = request.args.get('batch_lot')
         completed_date_from = request.args.get('completed_date_from')  # YYYY-MM-DD
         completed_date_to = request.args.get('completed_date_to')  # YYYY-MM-DD
+        include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()
@@ -3089,6 +3168,9 @@ def get_blending_works():
             elif completed_date_to:
                 where_clauses.append("DATE(end_time) <= ?")
                 params.append(completed_date_to)
+
+            if not include_hidden:
+                where_clauses.append('(is_hidden IS NULL OR is_hidden = 0)')
 
             query = base_select
             if where_clauses:

@@ -1508,7 +1508,7 @@ function t(key) {
                                 <td>
                                     <div style="display: flex; gap: 5px;">
                                         <button class="btn" onclick="viewDetail('${item.powder_name}', '${item.lot_number}')" style="padding: 6px 12px; font-size: 0.9em;">${t('view')}</button>
-                                        <button class="btn danger" onclick="deleteInspectionResult('${item.powder_name}', '${item.lot_number}', '${item.category}')" style="padding: 6px 12px; font-size: 0.9em; background:#EF5350; color:white;">삭제</button>
+                                        <button class="btn secondary" onclick="hideInspectionResult('${item.powder_name}', '${item.lot_number}', '${item.category}')" style="padding: 6px 12px; font-size: 0.9em;">숨기기</button>
                                     </div>
                                 </td>
                             </tr>
@@ -1542,28 +1542,20 @@ function t(key) {
             }
         }
 
-        async function deleteInspectionResult(powderName, lotNumber, category) {
-
-            if (!confirm(`검사결과를 삭제하시겠습니까?\n분말명: ${powderName}\nLOT: ${lotNumber}`)) {
-                return;
-            }
-
+        async function hideInspectionResult(powderName, lotNumber, category) {
+            if (!confirm('해당 검사결과를 숨기시겠습니까?\n(관리자 메뉴에서 복원 가능)')) return;
             try {
-                const response = await fetch(`${API_BASE}/api/inspection-result/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}`, {
-                    method: 'DELETE',
+                const resp = await fetch(`${API_BASE}/api/inspection-result/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}/hide`, {
+                    method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category: category })
+                    body: JSON.stringify({ hide: true, hidden_by: currentUserId })
                 });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    alert('검사 결과가 삭제되었습니다.');
-                    // 검색 폼 다시 제출하여 목록 새로고침
-                    document.getElementById('searchForm').dispatchEvent(new Event('submit'));
-                } else {
-                    alert('삭제 실패: ' + data.message);
+                const data = await resp.json();
+                if (!data.success) {
+                    alert('숨기기 실패: ' + (data.message || ''));
+                    return;
                 }
+                document.getElementById('searchForm').dispatchEvent(new Event('submit'));
             } catch (error) {
                 alert('오류: ' + error.message);
             }
@@ -4418,16 +4410,16 @@ function t(key) {
                                         <button class="btn" onclick="loadAutoInputPage(${work.id}, 'blending-log')" style="padding: 6px 12px; font-size: 0.9em; background:#F07D00; color:white; border:none; border-radius:4px;">
                                             입력현황
                                         </button>
-                                        <button class="btn danger" onclick="deleteBlendingWork(${work.id}, '${work.batch_lot}')" style="padding: 6px 12px; font-size: 0.9em; background:#EF5350; color:white; border:none; border-radius:4px;">
-                                            삭제
+                                        <button class="btn secondary" onclick="hideBlendingWork(${work.id}, '${work.batch_lot}')" style="padding: 6px 12px; font-size: 0.9em;">
+                                            숨기기
                                         </button>
                                     </div>` :
                                     `<div style="display: flex; gap: 5px;">
                                         <button class="btn" onclick="continueBlendingWork(${work.id})" style="padding: 6px 12px; font-size: 0.9em; background:#F07D00; color:white; border:none; border-radius:4px;">
                                             작업 계속
                                         </button>
-                                        <button class="btn danger" onclick="deleteBlendingWork(${work.id}, '${work.batch_lot}')" style="padding: 6px 12px; font-size: 0.9em; background:#EF5350; color:white; border:none; border-radius:4px;">
-                                            삭제
+                                        <button class="btn secondary" onclick="hideBlendingWork(${work.id}, '${work.batch_lot}')" style="padding: 6px 12px; font-size: 0.9em;">
+                                            숨기기
                                         </button>
                                     </div>`
                                 }
@@ -4494,6 +4486,25 @@ function t(key) {
                 } else {
                     alert('삭제 실패: ' + data.message);
                 }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        }
+
+        async function hideBlendingWork(workId, batchLot) {
+            if (!confirm(`배합 LOT "${batchLot}"을(를) 숨기시겠습니까?\n(관리자 메뉴에서 복원 가능)`)) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/blending/work/${workId}/hide`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hide: true, hidden_by: currentUserId })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    alert('숨기기 실패: ' + (data.message || ''));
+                    return;
+                }
+                loadBlendingWorks();
             } catch (error) {
                 alert('오류: ' + error.message);
             }
@@ -5196,10 +5207,7 @@ function t(key) {
                     } else if (isCompleted) {
                         actionHtml = '<span style="background: #4CAF50; color: white; padding: 8px 16px; border-radius: 5px; font-weight: 600;">✓ 완료</span>';
                     } else {
-                        actionHtml = `
-                            <button onclick="toggleHideBlendingOrder(${order.id}, true)" class="btn secondary" style="padding: 8px 12px; border-radius:4px; margin-right:4px;">숨기기</button>
-                            <button onclick="deleteBlendingOrder(${order.id})" class="btn danger" style="padding: 8px 12px; border-radius:4px;">삭제</button>
-                        `;
+                        actionHtml = `<button onclick="toggleHideBlendingOrder(${order.id}, true)" class="btn secondary" style="padding: 8px 12px; border-radius:4px;">숨기기</button>`;
                     }
 
                     html += `
