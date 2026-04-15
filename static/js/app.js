@@ -10,6 +10,9 @@ let currentAllowedMenus = [];
 let currentIsProgramAdmin = false;
 let currentRole = 'program_admin'; // 기존 코드 호환용
 
+// 라벨 데이터 캐시 (프린터 에이전트 전송용)
+let _labelDataCache = [];
+
 function setMenuByRole() {
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
         const page = item.getAttribute('data-page');
@@ -3529,10 +3532,6 @@ function t(key) {
                         actionHtml = `<button class="btn primary" onclick="startBlendingInspectionFromMixing('${work.batch_lot}', '${work.product_name}')" style="padding:6px 10px;">🔧 배합검사</button>`;
                     }
 
-                    const pName = work.product_name.replace(/'/g, "\\'");
-                    const bLot = work.batch_lot.replace(/'/g, "\\'");
-                    const labelBtn = `<button class="btn" onclick="printMixingSmallLabel('${pName}','${bLot}')" style="padding:6px 10px; background:#1976D2; color:#fff; margin-left:4px;" title="라벨 출력">🏷️</button>`;
-
                     html += `
                         <tr>
                             <td>${work.work_order || '-'}</td>
@@ -3540,7 +3539,7 @@ function t(key) {
                             <td><strong>${work.batch_lot}</strong></td>
                             <td>${work.operator || '-'}</td>
                             <td>${endTime}</td>
-                            <td style="white-space:nowrap;">${actionHtml}${labelBtn}</td>
+                            <td style="white-space:nowrap;">${actionHtml}</td>
                         </tr>
                     `;
                 });
@@ -3997,6 +3996,7 @@ function t(key) {
 
             // 초기화
             list.innerHTML = '';
+            _labelDataCache = [];
 
             const targetWeight = Number(work.target_total_weight) || 0;
             const packSize = 1000; // 1 ton = 1000 kg
@@ -4099,6 +4099,16 @@ function t(key) {
                             }
                         }, attempt === 0 ? 100 : 500);
                     })(labelIdx, qrcodeValue, 0);
+
+                    // 에이전트 전송용 데이터 캐시
+                    _labelDataCache.push({
+                        productName: product,
+                        batchLot: batchLot,
+                        packWeight: packWeight,
+                        packIndex: i,
+                        totalPacks: totalPacks,
+                        copyLabel: copyLabel
+                    });
                 } // end copy loop
             }
 
@@ -4132,8 +4142,30 @@ function t(key) {
             }
         }
 
-        function printLabel(index) {
-            // 개별 라벨 인쇄: 해당 라벨 DOM을 복사하여 새 창에서 인쇄
+        async function printLabel(index) {
+            // 로컬 프린터 에이전트를 통해 큰 라벨 + 작은 라벨 동시 출력
+            const labelData = _labelDataCache[index - 1];
+            if (labelData) {
+                try {
+                    const resp = await fetch('http://localhost:9100/print', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(labelData)
+                    });
+                    const result = await resp.json();
+                    if (result.success) {
+                        alert(`인쇄 완료\n큰 라벨: ${result.results.large}\n작은 라벨: ${result.results.small}`);
+                        return;
+                    } else {
+                        const errMsg = Object.values(result.results || {}).join('\n');
+                        alert(`인쇄 오류:\n${errMsg}\n\n브라우저 인쇄로 대체합니다.`);
+                    }
+                } catch (e) {
+                    console.warn('프린터 에이전트 연결 실패, 브라우저 인쇄로 대체:', e);
+                }
+            }
+
+            // 폴백: 브라우저 창 인쇄 (큰 라벨만)
             const list = document.getElementById('labelList');
             const labelEl = list && list.children && list.children[index - 1];
             if (!labelEl) return alert('라벨을 찾을 수 없습니다.');
@@ -4200,9 +4232,41 @@ function t(key) {
             w.document.close();
         }
 
-        function printAllLabels() {
+        async function printAllLabels() {
             const list = document.getElementById('labelList');
             if (!list || !list.children || list.children.length === 0) return alert('출력할 라벨이 없습니다.');
+
+            // 로컬 에이전트를 통해 전체 라벨 순차 출력
+            if (_labelDataCache.length > 0) {
+                try {
+                    const resp = await fetch('http://localhost:9100/status');
+                    if (resp.ok) {
+                        // 에이전트 실행 중: 라벨 순차 출력
+                        let failCount = 0;
+                        for (let i = 0; i < _labelDataCache.length; i++) {
+                            try {
+                                const r = await fetch('http://localhost:9100/print', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(_labelDataCache[i])
+                                });
+                                const result = await r.json();
+                                if (!result.success) failCount++;
+                            } catch (e) {
+                                failCount++;
+                            }
+                        }
+                        if (failCount === 0) {
+                            alert(`전체 ${_labelDataCache.length}장 인쇄 완료 (큰 라벨 + 작은 라벨)`);
+                        } else {
+                            alert(`${_labelDataCache.length - failCount}장 성공, ${failCount}장 실패\n브라우저 인쇄로 대체합니다.`);
+                        }
+                        if (failCount === 0) return;
+                    }
+                } catch (e) {
+                    console.warn('프린터 에이전트 연결 실패, 브라우저 인쇄로 대체:', e);
+                }
+            }
 
             // QR코드 이미지가 모두 생성되었는지 확인
             const allQrImgs = list.querySelectorAll('div[id^="label-qrcode-"] img');
