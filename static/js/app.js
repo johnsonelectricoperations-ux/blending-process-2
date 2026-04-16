@@ -2044,11 +2044,19 @@ function t(key) {
                 const scanPosLabel = scanPos > 0 ? `${scanPos}번째 단어` : '사용 안 함 (전체 사용)';
                 html += `
                     <div id="scanLotSection" style="margin-top:14px; padding:12px; background:#1E1E1E; border-radius:6px; border:1px solid #333;">
-                        <div style="display:flex; align-items:center; gap:16px;">
+                        <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
                             <span style="color:#F07D00; font-weight:600; font-size:0.95em;">📱 스캔 LOT 추출 위치</span>
                             <span id="scanLotDisplay" data-value="${scanPos}" style="color:#E8E8E8;">${scanPosLabel}</span>
                         </div>
-                        <div style="margin-top:6px; color:#888; font-size:0.82em;">바코드 스캔값에서 LOT번호로 사용할 단어 위치 (공백 기준). 0 = 전체 사용</div>
+                        <div style="background:#2A2A2A; border-radius:4px; padding:10px; font-size:0.83em; color:#A0A0A0; line-height:1.7;">
+                            <div style="color:#CCC; font-weight:600; margin-bottom:4px;">📌 규칙 설명</div>
+                            <div>· 바코드 스캔값을 <b style="color:#E8E8E8;">공백(띄어쓰기)</b> 기준으로 분리 후, 지정한 순번의 단어를 LOT번호로 사용합니다.</div>
+                            <div>· <b style="color:#E8E8E8;">0</b> = 규칙 없음. 스캔값 전체를 LOT번호로 사용합니다.</div>
+                            <div style="margin-top:6px; color:#888;">예시)</div>
+                            <div>· 스캔값 <span style="color:#F07D00;">1T093828 99</span> → 위치 <b style="color:#E8E8E8;">1</b> → LOT: <span style="color:#4CAF50;">1T093828</span></div>
+                            <div>· 스캔값 <span style="color:#F07D00;">EXIDUD 999321 99D</span> → 위치 <b style="color:#E8E8E8;">2</b> → LOT: <span style="color:#4CAF50;">999321</span></div>
+                            <div>· 스캔값 <span style="color:#F07D00;">L1C0104 05</span> → 위치 <b style="color:#E8E8E8;">1</b> → LOT: <span style="color:#4CAF50;">L1C0104</span></div>
+                        </div>
                     </div>
                 `;
 
