@@ -1870,7 +1870,8 @@ def admin_update_powder_spec(spec_id):
                     forming_strength_min = ?, forming_strength_max = ?, forming_strength_type = ?,
                     forming_load_min = ?, forming_load_max = ?, forming_load_type = ?,
                     particle_size_type = ?,
-                    category = ?
+                    category = ?,
+                    scan_lot_position = ?
                 WHERE id = ?
             ''', (
                 data.get('powder_name'),
@@ -1886,6 +1887,7 @@ def admin_update_powder_spec(spec_id):
                 data.get('forming_load_min'), data.get('forming_load_max'), data.get('forming_load_type'),
                 data.get('particle_size_type'),
                 data.get('category', 'incoming'),
+                int(data.get('scan_lot_position', 0) or 0),
                 spec_id
             ))
 
@@ -2397,6 +2399,18 @@ ensure_recipe_tolerance_columns()
 ensure_blending_order_hidden_columns()
 ensure_inspection_result_hidden_columns()
 ensure_blending_work_hidden_columns()
+
+def ensure_powder_spec_scan_lot_column():
+    """powder_spec 테이블에 scan_lot_position 컬럼 추가 (마이그레이션)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(powder_spec)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'scan_lot_position' not in columns:
+            cursor.execute('ALTER TABLE powder_spec ADD COLUMN scan_lot_position INTEGER DEFAULT 0')
+            conn.commit()
+
+ensure_powder_spec_scan_lot_column()
 
 
 @app.route('/api/admin/product-spec/rev', methods=['POST'])

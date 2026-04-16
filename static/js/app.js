@@ -2039,6 +2039,19 @@ function t(key) {
                 html += `</table>`;
                 html += `</div>`;
 
+                // 스캔 LOT 추출 위치 설정
+                const scanPos = spec.scan_lot_position || 0;
+                const scanPosLabel = scanPos > 0 ? `${scanPos}번째 단어` : '사용 안 함 (전체 사용)';
+                html += `
+                    <div id="scanLotSection" style="margin-top:14px; padding:12px; background:#1E1E1E; border-radius:6px; border:1px solid #333;">
+                        <div style="display:flex; align-items:center; gap:16px;">
+                            <span style="color:#F07D00; font-weight:600; font-size:0.95em;">📱 스캔 LOT 추출 위치</span>
+                            <span id="scanLotDisplay" data-value="${scanPos}" style="color:#E8E8E8;">${scanPosLabel}</span>
+                        </div>
+                        <div style="margin-top:6px; color:#888; font-size:0.82em;">바코드 스캔값에서 LOT번호로 사용할 단어 위치 (공백 기준). 0 = 전체 사용</div>
+                    </div>
+                `;
+
                 // 입도분석 상세 정보 (활성화된 경우)
                 if (spec.particle_size_type && spec.particle_size_type !== '비활성') {
                     // particle_size 테이블에서 데이터 가져오기
@@ -2137,6 +2150,13 @@ function t(key) {
                 }
             });
 
+            // 스캔 LOT 추출 위치 편집 가능하게 만들기
+            const scanLotDisplay = document.getElementById('scanLotDisplay');
+            if (scanLotDisplay) {
+                const curVal = scanLotDisplay.dataset.value || '0';
+                scanLotDisplay.innerHTML = `<input type="number" id="scanLotPositionInput" min="0" max="10" value="${curVal}" style="width:60px; padding:4px; border:1px solid #ddd; border-radius:3px; text-align:center;"> <span style="color:#888; font-size:0.85em;">번째 단어 (0=전체)</span>`;
+            }
+
             // 입도분석 항목도 편집 가능하게 만들기
             const particleItems = document.querySelectorAll('.particle-item');
             particleItems.forEach(item => {
@@ -2182,6 +2202,10 @@ function t(key) {
                 if (maxCell) data[`${field}_max`] = maxCell.value || null;
                 if (typeCell) data[`${field}_type`] = typeCell.value;
             });
+
+            // 스캔 LOT 추출 위치
+            const scanLotInput = document.getElementById('scanLotPositionInput');
+            if (scanLotInput) data['scan_lot_position'] = parseInt(scanLotInput.value) || 0;
 
             try {
                 // 1. 분말 사양 저장
@@ -6486,6 +6510,33 @@ function t(key) {
             }, 100);
         }
 
+        // 분말별 스캔 LOT 추출 위치 캐시
+        let scanLotPositionCache = {};
+
+        async function loadScanLotPosition(powderName) {
+            if (scanLotPositionCache[powderName] !== undefined) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/admin/powder-spec`);
+                const data = await resp.json();
+                if (data.success) {
+                    data.data.forEach(spec => {
+                        scanLotPositionCache[spec.powder_name] = parseInt(spec.scan_lot_position) || 0;
+                    });
+                }
+            } catch (e) { /* 캐시 로드 실패 시 기본값(0) 사용 */ }
+        }
+
+        function applyScanLotRule(inputEl, powderName) {
+            const pos = scanLotPositionCache[powderName] || 0;
+            if (pos <= 0) return; // 0이면 전체 사용
+            const raw = inputEl.value.trim();
+            if (!raw) return;
+            const words = raw.split(/\s+/);
+            if (words.length >= pos) {
+                inputEl.value = words[pos - 1];
+            }
+        }
+
         // LOT 행 추가
         let lotRowCounters = {}; // 각 분말별 LOT 행 카운터
         let approvedLotsCache = {}; // 분말별 합격 LOT 캐시
@@ -6540,7 +6591,7 @@ function t(key) {
                                placeholder="스캔 또는 수동입력"
                                style="flex: 1; padding: 8px;"
                                oninput="resetLotValidation(${materialIndex}, ${lotIndex})"
-                               onblur="validateAutoInputLot(${materialIndex}, ${lotIndex}, '${powderName}')"
+                               onblur="applyScanLotRule(this, '${powderName}'); validateAutoInputLot(${materialIndex}, ${lotIndex}, '${powderName}')"
                                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
                         <label style="display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 0.85em; cursor: pointer;">
                             <input type="checkbox"
@@ -6567,8 +6618,9 @@ function t(key) {
 
             tableBody.appendChild(newRow);
 
-            // 합격 LOT 목록 미리 로드
+            // 합격 LOT 목록 및 스캔 규칙 미리 로드
             loadApprovedLotsForMaterial(powderName);
+            loadScanLotPosition(powderName);
 
             // 첫 번째 LOT 입력에 포커스
             setTimeout(() => {
