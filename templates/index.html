@@ -754,6 +754,9 @@
                 <button class="admin-tab" id="adminTabUserMgmt" onclick="showAdminTab('user-id-mgmt')" style="display:none;">
                     <span>사용자 관리</span>
                 </button>
+                <button class="admin-tab" id="adminTabScanRules" onclick="showAdminTab('scan-rules')" style="display:none;">
+                    <span>스캔 LOT 규칙</span>
+                </button>
             </div>
 
             <!-- 탭 1: 분말사양관리 -->
@@ -1086,6 +1089,24 @@
                 </div>
             </div>
             <!-- 탭 5 끝 -->
+
+            <!-- 탭 6: 스캔 LOT 규칙 (프로그램관리자 전용) -->
+            <div id="scan-rules-tab" class="admin-tab-content">
+                <div class="card">
+                    <div class="card-title">📱 스캔 LOT 추출 규칙 설정 <span style="font-size:0.85em; color:var(--text-secondary);">(프로그램관리자 전용)</span></div>
+                    <div style="background:#2A2A2A; border-radius:6px; padding:12px; margin-bottom:16px; font-size:0.85em; color:#A0A0A0; line-height:1.8;">
+                        <div style="color:#F07D00; font-weight:600; margin-bottom:4px;">📌 규칙 설명</div>
+                        <div>· 바코드 스캔값을 <b style="color:#E8E8E8;">공백(띄어쓰기)</b> 기준으로 분리 후, 지정한 순번의 단어를 LOT번호로 사용합니다.</div>
+                        <div>· <b style="color:#E8E8E8;">0</b> = 규칙 없음. 스캔값 전체를 LOT번호로 사용합니다.</div>
+                        <div style="margin-top:6px;">예시)</div>
+                        <div>· 스캔값 <span style="color:#F07D00;">1T093828 99</span> → 위치 <b style="color:#E8E8E8;">1</b> → LOT: <span style="color:#4CAF50;">1T093828</span></div>
+                        <div>· 스캔값 <span style="color:#F07D00;">EXIDUD 999321 99D</span> → 위치 <b style="color:#E8E8E8;">2</b> → LOT: <span style="color:#4CAF50;">999321</span></div>
+                        <div>· 스캔값 <span style="color:#F07D00;">L1C0104 05</span> → 위치 <b style="color:#E8E8E8;">1</b> → LOT: <span style="color:#4CAF50;">L1C0104</span></div>
+                    </div>
+                    <div id="scanRulesTableContainer"></div>
+                </div>
+            </div>
+            <!-- 탭 6 끝 -->
 
             <!-- 탭 3: 배합규격서관리 -->
             <div id="recipe-mgmt-tab" class="admin-tab-content">

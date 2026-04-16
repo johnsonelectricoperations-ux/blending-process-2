@@ -31,8 +31,10 @@ function setMenuByRole() {
     // 프로그램관리자 전용 탭 표시
     const tabPerms = document.getElementById('adminTabPermissions');
     const tabUserMgmt = document.getElementById('adminTabUserMgmt');
+    const tabScanRules = document.getElementById('adminTabScanRules');
     if (tabPerms) tabPerms.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
     if (tabUserMgmt) tabUserMgmt.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
+    if (tabScanRules) tabScanRules.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
 }
 
 // ============================================
@@ -395,6 +397,83 @@ function t(key) {
                 content.classList.remove('active');
             });
             document.getElementById(`${tabName}-tab`).classList.add('active');
+
+            if (tabName === 'scan-rules') loadScanRulesTab();
+        }
+
+        async function loadScanRulesTab() {
+            const container = document.getElementById('scanRulesTableContainer');
+            if (!container) return;
+            container.innerHTML = '<div style="color:#888; padding:12px;">로딩 중...</div>';
+            try {
+                const resp = await fetch(`${API_BASE}/api/admin/powder-spec`);
+                const data = await resp.json();
+                if (!data.success || !data.data.length) {
+                    container.innerHTML = '<div style="color:#888; padding:12px;">등록된 분말이 없습니다.</div>';
+                    return;
+                }
+                let html = `<table style="width:100%; border-collapse:collapse; font-size:0.95em;">
+                    <thead>
+                        <tr style="background:#1E1E1E;">
+                            <th style="padding:10px 14px; text-align:left; border:1px solid #333;">분말명</th>
+                            <th style="padding:10px 14px; text-align:center; border:1px solid #333;">구분</th>
+                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:160px;">스캔 LOT 위치</th>
+                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:120px;">저장</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                data.data.forEach(spec => {
+                    const pos = spec.scan_lot_position || 0;
+                    const catLabel = spec.category === 'mixing' ? '배합분말' : '수입분말';
+                    html += `<tr style="border-bottom:1px solid #333;">
+                        <td style="padding:10px 14px; border:1px solid #333; font-weight:600;">${spec.powder_name}</td>
+                        <td style="padding:10px 14px; border:1px solid #333; text-align:center; color:#A0A0A0;">${catLabel}</td>
+                        <td style="padding:10px 14px; border:1px solid #333; text-align:center;">
+                            <input type="number" min="0" max="10" value="${pos}"
+                                id="scanPos_${spec.id}"
+                                style="width:70px; padding:5px; border:1px solid #555; border-radius:4px; text-align:center; background:#2A2A2A; color:#E8E8E8;">
+                            <span style="color:#888; font-size:0.82em; margin-left:6px;">번째 단어</span>
+                        </td>
+                        <td style="padding:10px 14px; border:1px solid #333; text-align:center;">
+                            <button class="btn secondary" style="padding:5px 14px; font-size:0.85em;"
+                                onclick="saveScanLotPosition(${spec.id}, '${spec.powder_name}')">저장</button>
+                        </td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = `<div style="color:#EF5350; padding:12px;">오류: ${e.message}</div>`;
+            }
+        }
+
+        async function saveScanLotPosition(specId, powderName) {
+            const input = document.getElementById(`scanPos_${specId}`);
+            if (!input) return;
+            const pos = parseInt(input.value) || 0;
+            try {
+                // 현재 spec 전체를 가져와서 scan_lot_position만 업데이트
+                const getResp = await fetch(`${API_BASE}/api/admin/powder-spec`);
+                const getData = await getResp.json();
+                const spec = getData.data.find(s => s.id === specId);
+                if (!spec) { alert('분말 정보를 찾을 수 없습니다.'); return; }
+
+                const resp = await fetch(`${API_BASE}/api/admin/powder-spec/${specId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...spec, scan_lot_position: pos })
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    // 캐시 갱신
+                    scanLotPositionCache[powderName] = pos;
+                    alert(`${powderName} 저장 완료 (위치: ${pos === 0 ? '전체 사용' : pos + '번째 단어'})`);
+                } else {
+                    alert('저장 실패: ' + (result.message || ''));
+                }
+            } catch (e) {
+                alert('오류: ' + e.message);
+            }
         }
 
         // 분말 관리 탭 : 수입 / 배합 분말을 분리하여 같은 컨텐츠를 재사용
