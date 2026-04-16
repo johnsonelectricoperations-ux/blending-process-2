@@ -3152,7 +3152,7 @@ def get_blending_works():
                     id, work_order, product_name, product_code, batch_lot,
                     target_total_weight, actual_total_weight,
                     blending_time, blending_temperature, blending_rpm,
-                    operator, status, start_time, end_time, notes
+                    operator, status, start_time, end_time, notes, is_hidden
                 FROM blending_work
             '''
 

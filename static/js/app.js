@@ -3611,7 +3611,7 @@ function t(key) {
         // --------------------------------------------
         async function loadMixingPage() {
             try {
-                const response = await fetch(`${API_BASE}/api/blending/works?status=completed`);
+                const response = await fetch(`${API_BASE}/api/blending/works?status=completed&include_hidden=true`);
                 const data = await response.json();
 
                 const container = document.getElementById('mixingCompletedList');
