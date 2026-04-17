@@ -3171,16 +3171,16 @@ def get_blending_works():
                 where_clauses.append('batch_lot LIKE ?')
                 params.append(f"%{batch_lot}%")
 
-            # 날짜 범위 필터
+            # 날짜 범위 필터 (완료 작업은 end_time, 진행중 작업은 start_time 기준)
             if completed_date_from and completed_date_to:
-                where_clauses.append("DATE(end_time) BETWEEN ? AND ?")
+                where_clauses.append("DATE(COALESCE(end_time, start_time)) BETWEEN ? AND ?")
                 params.append(completed_date_from)
                 params.append(completed_date_to)
             elif completed_date_from:
-                where_clauses.append("DATE(end_time) >= ?")
+                where_clauses.append("DATE(COALESCE(end_time, start_time)) >= ?")
                 params.append(completed_date_from)
             elif completed_date_to:
-                where_clauses.append("DATE(end_time) <= ?")
+                where_clauses.append("DATE(COALESCE(end_time, start_time)) <= ?")
                 params.append(completed_date_to)
 
             if not include_hidden:

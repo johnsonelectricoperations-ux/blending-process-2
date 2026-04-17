@@ -551,12 +551,12 @@
                 <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
                     <label data-i18n="status">상태:</label>
                     <select id="blendingLogStatusFilter" onchange="loadBlendingWorks()" style="padding: 8px; border: 1px solid var(--border-secondary); border-radius: 4px;">
-                        <option value="all" data-i18n="all">전체</option>
-                        <option value="completed" data-i18n="completed" selected>완료</option>
+                        <option value="all" data-i18n="all" selected>전체</option>
+                        <option value="completed" data-i18n="completed">완료</option>
                         <option value="in_progress" data-i18n="inProgress">진행중</option>
                     </select>
 
-                    <label style="margin-left: 12px;">작업완료일</label>
+                    <label style="margin-left: 12px;">작업일</label>
                     <input type="date" id="filterCompletedDateFrom" placeholder="시작일" style="padding:8px; border:1px solid #ddd; border-radius:4px;">
                     <span style="margin: 0 5px;">~</span>
                     <input type="date" id="filterCompletedDateTo" placeholder="종료일" style="padding:8px; border:1px solid #ddd; border-radius:4px;">
