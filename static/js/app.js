@@ -6297,11 +6297,18 @@ function t(key) {
 
                             <!-- 합계 및 판정 영역 -->
                             <div style="margin-top: 15px; padding: 15px; background: white; border-radius: 8px; border: 2px solid #F07D00; color: #000;">
-                                <div style="display: grid; grid-template-columns: 1fr auto 1fr 1fr; gap: 15px; align-items: center;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; gap: 15px; align-items: center;">
                                     <div style="text-align: center;">
                                         <div style="font-size: 0.85em; color: #666; margin-bottom: 5px;">합계 중량</div>
                                         <div style="font-size: 1.2em; font-weight: 700; color: #333;">
                                             <span id="totalWeight_${idx}">0</span> ${material.isMain ? 'kg' : 'g'}
+                                        </div>
+                                    </div>
+
+                                    <div style="text-align: center; border-left: 1px solid #eee; padding-left: 15px;">
+                                        <div style="font-size: 0.85em; color: #666; margin-bottom: 5px;">잔여 중량</div>
+                                        <div style="font-size: 1.2em; font-weight: 700;">
+                                            <span id="remainingWeight_${idx}" style="color: #999;">-</span>
                                         </div>
                                     </div>
 
@@ -6545,11 +6552,18 @@ function t(key) {
 
                             <!-- 합계 및 판정 영역 -->
                             <div style="margin-top: 15px; padding: 15px; background: white; border-radius: 8px; border: 2px solid #F07D00; color: #000;">
-                                <div style="display: grid; grid-template-columns: 1fr auto 1fr 1fr; gap: 15px; align-items: center;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; gap: 15px; align-items: center;">
                                     <div style="text-align: center;">
                                         <div style="font-size: 0.85em; color: #666; margin-bottom: 5px;">합계 중량</div>
                                         <div style="font-size: 1.2em; font-weight: 700; color: #333;">
                                             <span id="totalWeight_${idx}">0</span> ${material.isMain ? 'kg' : 'g'}
+                                        </div>
+                                    </div>
+
+                                    <div style="text-align: center; border-left: 1px solid #eee; padding-left: 15px;">
+                                        <div style="font-size: 0.85em; color: #666; margin-bottom: 5px;">잔여 중량</div>
+                                        <div style="font-size: 1.2em; font-weight: 700;">
+                                            <span id="remainingWeight_${idx}" style="color: #999;">-</span>
                                         </div>
                                     </div>
 
@@ -6876,6 +6890,29 @@ function t(key) {
             const totalWeightSpan = document.getElementById(`totalWeight_${materialIndex}`);
             if (totalWeightSpan) {
                 totalWeightSpan.textContent = isMain ? total.toFixed(2) : Math.round(total).toLocaleString();
+            }
+
+            // 잔여 중량 표시
+            const remainingSpan = document.getElementById(`remainingWeight_${materialIndex}`);
+            if (remainingSpan) {
+                const calculatedWeight = parseFloat(materialRow.dataset.calculatedWeight) || 0;
+                // Main은 kg 단위, 첨가분말은 g 단위로 변환
+                const targetInUnit = isMain ? calculatedWeight : calculatedWeight * 1000;
+                const remaining = targetInUnit - total;
+                const unit = isMain ? 'kg' : 'g';
+                if (total === 0) {
+                    remainingSpan.textContent = '-';
+                    remainingSpan.style.color = '#999';
+                } else if (remaining > 0) {
+                    remainingSpan.textContent = `${isMain ? remaining.toFixed(2) : Math.round(remaining).toLocaleString()} ${unit} 남음`;
+                    remainingSpan.style.color = '#2E7D32';
+                } else if (remaining < 0) {
+                    remainingSpan.textContent = `${isMain ? Math.abs(remaining).toFixed(2) : Math.round(Math.abs(remaining)).toLocaleString()} ${unit} 초과`;
+                    remainingSpan.style.color = '#C62828';
+                } else {
+                    remainingSpan.textContent = `0 ${unit} (목표 달성)`;
+                    remainingSpan.style.color = '#1565C0';
+                }
             }
 
             // 판정 버튼 활성화 여부 (LOT 검증 포함)
