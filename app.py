@@ -3,15 +3,17 @@
 Google Apps Script를 대체하는 로컬 웹서버
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 import sqlite3
 import json
 import os
+import re
 import gzip
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from contextlib import closing
+import fitz  # PyMuPDF
 
 app = Flask(__name__)
 CORS(app)
@@ -333,6 +335,12 @@ def _do_start_inspection():
     if not all([powder_name, lot_number]):
         return jsonify({'success': False, 'message': '필수 입력 항목이 누락되었습니다.'})
 
+    # Millsheet 파일 경로 (저장된 경우)
+    sp = safe_name(powder_name)
+    sl = safe_name(lot_number)
+    millsheet_filepath = os.path.join(MILLSHEET_DIR, sp, f"{sp}_{sl}.pdf")
+    millsheet_rel_path = f"millsheets/{sp}/{sp}_{sl}.pdf" if os.path.exists(millsheet_filepath) else None
+
     with closing(get_db()) as conn:
         cursor = conn.cursor()
 
@@ -475,12 +483,18 @@ def _do_start_inspection():
         items = get_inspection_items(powder_name, inspection_type, conn)
 
         if not items:
-            # 일상검사 항목이 없는 분말 → 즉시 합격 처리
+            # 일상검사 항목이 없는 분말 → Millsheet 확인 후 즉시 합격 처리
+            if not millsheet_rel_path:
+                return jsonify({
+                    'success': False,
+                    'needMillsheet': True,
+                    'message': '이 분말은 일상검사 항목이 없습니다.\nMillsheet를 첨부하면 자동 합격 처리됩니다.'
+                })
             cursor.execute('''
                 INSERT INTO inspection_result
-                (powder_name, lot_number, inspection_type, inspector, category, inspection_date, final_result)
-                VALUES (?, ?, ?, ?, ?, ?, 'PASS')
-            ''', (powder_name, lot_number, inspection_type, inspector, category, inspection_date))
+                (powder_name, lot_number, inspection_type, inspector, category, inspection_date, final_result, millsheet_path)
+                VALUES (?, ?, ?, ?, ?, ?, 'PASS', ?)
+            ''', (powder_name, lot_number, inspection_type, inspector, category, inspection_date, millsheet_rel_path))
             conn.commit()
             return jsonify({
                 'success': True,
@@ -1735,11 +1749,23 @@ def update_final_result(powder_name, lot_number, conn=None):
                 final_result = 'FAIL'
                 break
 
-        cursor.execute('''
-            UPDATE inspection_result
-            SET final_result = ?
-            WHERE powder_name = ? AND lot_number = ?
-        ''', (final_result, powder_name, lot_number))
+        # Millsheet 파일 존재 시 경로도 함께 저장
+        sp = safe_name(powder_name)
+        sl = safe_name(lot_number)
+        ms_path = os.path.join(MILLSHEET_DIR, sp, f"{sp}_{sl}.pdf")
+        ms_rel  = f"millsheets/{sp}/{sp}_{sl}.pdf" if os.path.exists(ms_path) else None
+        if ms_rel:
+            cursor.execute('''
+                UPDATE inspection_result
+                SET final_result = ?, millsheet_path = ?
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (final_result, ms_rel, powder_name, lot_number))
+        else:
+            cursor.execute('''
+                UPDATE inspection_result
+                SET final_result = ?
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (final_result, powder_name, lot_number))
 
         print(f"[DEBUG] {powder_name} {lot_number}: final_result = {final_result} 설정 완료")
 
@@ -2411,6 +2437,91 @@ def ensure_powder_spec_scan_lot_column():
             conn.commit()
 
 ensure_powder_spec_scan_lot_column()
+
+# ---------------------------------------------------------------------------
+# Millsheet 저장 설정
+# ---------------------------------------------------------------------------
+MILLSHEET_DIR = os.path.join(os.path.dirname(__file__), 'uploads', 'millsheets')
+
+def safe_name(name):
+    """파일/폴더명에 사용할 수 없는 문자를 _로 치환"""
+    return re.sub(r'[^\w.\-]', '_', name)
+
+def ensure_millsheet_path_column():
+    """inspection_result 테이블에 millsheet_path 컬럼 추가 (마이그레이션)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(inspection_result)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if 'millsheet_path' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN millsheet_path VARCHAR(500)')
+            conn.commit()
+
+ensure_millsheet_path_column()
+
+# ---------------------------------------------------------------------------
+# Millsheet 업로드 API
+# ---------------------------------------------------------------------------
+
+@app.route('/api/millsheet/upload', methods=['POST'])
+def upload_millsheet():
+    powder_name = request.form.get('powder_name', '').strip()
+    lot_number  = request.form.get('lot_number', '').strip()
+    overwrite   = request.form.get('overwrite', 'false').lower() == 'true'
+    try:
+        page_numbers = json.loads(request.form.get('page_numbers', '[]'))
+    except Exception:
+        return jsonify({'success': False, 'message': '페이지 번호 형식이 잘못되었습니다.'})
+
+    if not powder_name or not lot_number:
+        return jsonify({'success': False, 'message': '분말명과 LOT번호를 입력하세요.'})
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '파일을 선택하세요.'})
+    if not page_numbers:
+        return jsonify({'success': False, 'message': '저장할 페이지를 선택하세요.'})
+
+    pdf_file = request.files['file']
+    if not pdf_file.filename.lower().endswith('.pdf'):
+        return jsonify({'success': False, 'message': 'PDF 파일만 업로드 가능합니다.'})
+
+    sp = safe_name(powder_name)
+    sl = safe_name(lot_number)
+    folder   = os.path.join(MILLSHEET_DIR, sp)
+    filename = f"{sp}_{sl}.pdf"
+    filepath = os.path.join(folder, filename)
+
+    if os.path.exists(filepath) and not overwrite:
+        return jsonify({'success': False, 'exists': True,
+                        'message': '기존 파일이 있습니다. 교체하시겠습니까?'})
+
+    os.makedirs(folder, exist_ok=True)
+    try:
+        pdf_bytes = pdf_file.read()
+        src  = fitz.open(stream=pdf_bytes, filetype='pdf')
+        dest = fitz.open()
+        for p in sorted(page_numbers):
+            idx = p - 1
+            if 0 <= idx < len(src):
+                dest.insert_pdf(src, from_page=idx, to_page=idx)
+        dest.save(filepath)
+        dest.close()
+        src.close()
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'PDF 처리 오류: {str(e)}'})
+
+    rel_path = f"millsheets/{sp}/{filename}"
+    return jsonify({'success': True, 'path': rel_path})
+
+
+@app.route('/api/millsheet/<powder_name>/<lot_number>', methods=['GET'])
+def serve_millsheet(powder_name, lot_number):
+    sp = safe_name(powder_name)
+    sl = safe_name(lot_number)
+    filepath = os.path.join(MILLSHEET_DIR, sp, f"{sp}_{sl}.pdf")
+    if not os.path.exists(filepath):
+        return jsonify({'success': False, 'message': '파일을 찾을 수 없습니다.'}), 404
+    return send_file(filepath, mimetype='application/pdf',
+                     download_name=f"{sp}_{sl}.pdf", as_attachment=False)
 
 
 @app.route('/api/admin/product-spec/rev', methods=['POST'])

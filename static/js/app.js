@@ -3,6 +3,17 @@
 // API Base URL
 const API_BASE = '';
 
+// PDF.js worker 설정
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// Millsheet 상태
+let millsheetPdfDoc      = null;
+let millsheetSelectedPages = [];
+let millsheetFile        = null;
+
 // 현재 로그인 사용자 정보
 let currentUserId = '';
 let currentUserName = '';
@@ -693,6 +704,110 @@ function t(key) {
         // 수입검사 폼 처리
         const incomingFormElement = document.getElementById('incomingForm');
 
+        // ============================================
+        // Millsheet PDF 업로드 / 페이지 선택
+        // ============================================
+
+        async function onMillsheetFileSelected(input) {
+            const file = input.files[0];
+            if (!file) return;
+            millsheetFile = file;
+            millsheetSelectedPages = [];
+            document.getElementById('millsheetFileName').textContent = file.name;
+            document.getElementById('millsheetClearBtn').style.display = 'inline-block';
+            document.getElementById('millsheetUploadStatus').textContent = '';
+
+            const arrayBuffer = await file.arrayBuffer();
+            try {
+                millsheetPdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+                await renderMillsheetThumbnails();
+                document.getElementById('millsheetPageContainer').style.display = 'block';
+            } catch (e) {
+                alert('PDF 파일을 열 수 없습니다: ' + e.message);
+            }
+        }
+
+        async function renderMillsheetThumbnails() {
+            const container = document.getElementById('millsheetThumbnails');
+            container.innerHTML = '<span style="color:#A0A0A0;font-size:0.85em;">페이지 로딩 중...</span>';
+            const numPages = millsheetPdfDoc.numPages;
+            container.innerHTML = '';
+            for (let i = 1; i <= numPages; i++) {
+                const page = await millsheetPdfDoc.getPage(i);
+                const vp = page.getViewport({ scale: 0.25 });
+                const canvas = document.createElement('canvas');
+                canvas.width  = vp.width;
+                canvas.height = vp.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+                const wrapper = document.createElement('div');
+                wrapper.dataset.page = i;
+                wrapper.style.cssText = 'cursor:pointer;border:3px solid #444;border-radius:6px;padding:4px;text-align:center;background:#222;';
+                const lbl = document.createElement('div');
+                lbl.textContent = `${i}페이지`;
+                lbl.style.cssText = 'font-size:0.72em;color:#888;margin-top:3px;';
+                wrapper.appendChild(canvas);
+                wrapper.appendChild(lbl);
+                wrapper.onclick = () => toggleMillsheetPage(wrapper, i);
+                container.appendChild(wrapper);
+            }
+            updateMillsheetStatus();
+        }
+
+        function toggleMillsheetPage(wrapper, pageNum) {
+            const idx = millsheetSelectedPages.indexOf(pageNum);
+            if (idx === -1) {
+                millsheetSelectedPages.push(pageNum);
+                wrapper.style.borderColor = '#1976D2';
+                wrapper.style.background  = 'rgba(25,118,210,0.15)';
+            } else {
+                millsheetSelectedPages.splice(idx, 1);
+                wrapper.style.borderColor = '#444';
+                wrapper.style.background  = '#222';
+            }
+            updateMillsheetStatus();
+        }
+
+        function updateMillsheetStatus() {
+            const el = document.getElementById('millsheetUploadStatus');
+            if (!el) return;
+            if (millsheetSelectedPages.length === 0) {
+                el.textContent = '선택된 페이지 없음';
+                el.style.color = '#A0A0A0';
+            } else {
+                const sorted = [...millsheetSelectedPages].sort((a, b) => a - b);
+                el.textContent = `선택된 페이지: ${sorted.join(', ')}페이지`;
+                el.style.color = '#4FC3F7';
+            }
+        }
+
+        function clearMillsheet() {
+            millsheetFile = null;
+            millsheetPdfDoc = null;
+            millsheetSelectedPages = [];
+            document.getElementById('millsheetFileInput').value = '';
+            document.getElementById('millsheetFileName').textContent = '선택된 파일 없음';
+            document.getElementById('millsheetClearBtn').style.display = 'none';
+            document.getElementById('millsheetPageContainer').style.display = 'none';
+            document.getElementById('millsheetThumbnails').innerHTML = '';
+            document.getElementById('millsheetUploadStatus').textContent = '';
+        }
+
+        async function doMillsheetUpload(powderName, lotNumber, overwrite = false) {
+            const formData = new FormData();
+            formData.append('file', millsheetFile);
+            formData.append('powder_name', powderName);
+            formData.append('lot_number', lotNumber);
+            formData.append('page_numbers', JSON.stringify(millsheetSelectedPages));
+            formData.append('overwrite', overwrite ? 'true' : 'false');
+
+            const resp = await fetch(`${API_BASE}/api/millsheet/upload`, {
+                method: 'POST',
+                body: formData
+            });
+            return await resp.json();
+        }
+
         if (incomingFormElement) {
             // 검사일 기본값을 오늘 날짜로 설정
             const incomingDateInput = document.getElementById('incomingInspectionDate');
@@ -702,17 +817,39 @@ function t(key) {
             }
 
             incomingFormElement.addEventListener('submit', async (e) => {
-            e.preventDefault();
+                e.preventDefault();
 
-            const powderName = document.getElementById('incomingPowderName').value;
-            const lotNumber = document.getElementById('incomingLotNumber').value;
-            const inspectionDate = document.getElementById('incomingInspectionDate').value;
-            const inspectionType = document.getElementById('incomingInspectionType').value;
-            const inspector = document.getElementById('incomingInspector').value;
-            const category = 'incoming';
+                const powderName     = document.getElementById('incomingPowderName').value;
+                const lotNumber      = document.getElementById('incomingLotNumber').value;
+                const inspectionDate = document.getElementById('incomingInspectionDate').value;
+                const inspectionType = document.getElementById('incomingInspectionType').value;
+                const inspector      = document.getElementById('incomingInspector').value;
+                const category       = 'incoming';
 
-            await startInspection(powderName, lotNumber, inspectionType, inspector, category, inspectionDate);
-        });
+                // Millsheet 업로드 처리 (파일 선택 + 페이지 선택된 경우)
+                if (millsheetFile) {
+                    if (millsheetSelectedPages.length === 0) {
+                        alert('저장할 Millsheet 페이지를 선택해주세요.');
+                        return;
+                    }
+                    try {
+                        let uploadResult = await doMillsheetUpload(powderName, lotNumber, false);
+                        if (!uploadResult.success && uploadResult.exists) {
+                            if (!confirm('기존 Millsheet 파일이 있습니다. 교체하시겠습니까?')) return;
+                            uploadResult = await doMillsheetUpload(powderName, lotNumber, true);
+                        }
+                        if (!uploadResult.success) {
+                            alert('Millsheet 업로드 실패: ' + uploadResult.message);
+                            return;
+                        }
+                    } catch (err) {
+                        alert('Millsheet 업로드 오류: ' + err.message);
+                        return;
+                    }
+                }
+
+                await startInspection(powderName, lotNumber, inspectionType, inspector, category, inspectionDate);
+            });
         }
 
         // 배합검사 폼 처리
@@ -778,6 +915,8 @@ function t(key) {
                 if (data.success) {
                     if (data.isAutoApproved) {
                         alert(`${data.data.powderName} (LOT: ${data.data.lotNumber})\n일상검사 항목이 없어 자동 합격 처리되었습니다.`);
+                        loadIncomingIncompleteInspections();
+                        clearMillsheet();
                         return;
                     }
 
@@ -793,6 +932,11 @@ function t(key) {
 
                     showInspectionPage();
                 } else {
+                    if (data.needMillsheet) {
+                        alert(data.message);
+                        document.getElementById('millsheetFileInput').click();
+                        return;
+                    }
                     alert('검사 시작 실패: ' + data.message);
                 }
             } catch (error) {
@@ -1569,7 +1713,7 @@ function t(key) {
                 const resultsDiv = document.getElementById('searchResults');
 
                 if (data.success && data.data.length > 0) {
-                    let html = `<table><tr><th>${t('category')}</th><th>${t('powderName')}</th><th>${t('lotNumber')}</th><th>${t('inspector')}</th><th>${t('inspectionTime')}</th><th>${t('inspectionType')}</th><th>${t('finalResult')}</th><th>${t('detail')}</th></tr>`;
+                    let html = `<table><tr><th>${t('category')}</th><th>${t('powderName')}</th><th>${t('lotNumber')}</th><th>${t('inspector')}</th><th>${t('inspectionTime')}</th><th>${t('inspectionType')}</th><th>${t('finalResult')}</th><th>${t('detail')}</th><th>Millsheet</th></tr>`;
 
                     data.data.forEach(item => {
                         const isHidden = item.is_hidden == 1;
@@ -1581,6 +1725,7 @@ function t(key) {
                         const pName = item.powder_name.replace(/'/g, "\\'");
                         const lNum = item.lot_number.replace(/'/g, "\\'");
 
+                        const hasMillsheet = item.millsheet_path ? true : false;
                         html += `
                             <tr style="${isHidden ? 'opacity:0.6;' : ''}">
                                 <td>${categoryBadge}</td>
@@ -1599,6 +1744,14 @@ function t(key) {
                                         }
                                     </div>
                                 </td>
+                                <td>
+                                    ${hasMillsheet
+                                        ? `<button class="btn" onclick="viewMillsheet('${pName}', '${lNum}')"
+                                               style="padding: 6px 12px; font-size: 0.9em; background:#1565C0;">
+                                               📄 보기</button>`
+                                        : `<span style="color:#555; font-size:0.85em;">-</span>`
+                                    }
+                                </td>
                             </tr>
                         `;
                     });
@@ -1612,6 +1765,10 @@ function t(key) {
                 document.getElementById('searchResults').innerHTML = `<div class="empty-message">오류: ${error.message}</div>`;
             }
         });
+        }
+
+        function viewMillsheet(powderName, lotNumber) {
+            window.open(`${API_BASE}/api/millsheet/${encodeURIComponent(powderName)}/${encodeURIComponent(lotNumber)}`, '_blank');
         }
 
         async function viewDetail(powderName, lotNumber) {
