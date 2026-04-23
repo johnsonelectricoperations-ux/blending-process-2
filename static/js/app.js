@@ -1957,9 +1957,21 @@ function t(key) {
 
                 if (avg !== null && avg !== undefined && avg !== '') {
                     const badgeClass = result === 'PASS' ? 'pass' : 'fail';
+                    const spec = detail.powderSpec || {};
+                    const specMin = spec[`${item.prefix}_min`];
+                    const specMax = spec[`${item.prefix}_max`];
+                    let specText = null;
+                    if (specMin != null && specMax != null) {
+                        specText = `규격: ${specMin} ~ ${specMax} ${item.unit}`;
+                    } else if (specMin != null) {
+                        specText = `규격: ≥ ${specMin} ${item.unit}`;
+                    } else if (specMax != null) {
+                        specText = `규격: ≤ ${specMax} ${item.unit}`;
+                    }
                     html += `
                         <div class="detail-item">
                             <h4>${t(item.nameKey)}</h4>
+                            ${specText ? `<p style="color:#A0A0A0;font-size:0.85em;margin:2px 0 4px;">${specText}</p>` : ''}
                             <p>${t('average')}: <strong>${avg} ${item.unit}</strong></p>
                             <p>${t('result')}: <span class="badge ${badgeClass}">${result}</span></p>
                         </div>
