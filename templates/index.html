@@ -1195,6 +1195,43 @@
         </div>
     </div>
 
+    <!-- Millsheet 페이지 확대 미리보기 모달 -->
+    <div id="millsheetPreviewModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85);
+         z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:#1E1E1E; border-radius:10px; padding:20px; max-width:90vw; max-height:92vh;
+                    display:flex; flex-direction:column; gap:14px; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+            <!-- 헤더 -->
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span id="millsheetPreviewTitle" style="font-size:1.1em; font-weight:700; color:#E8E8E8;"></span>
+                <button onclick="closeMillsheetPreview()"
+                        style="background:#555; color:#fff; border:none; border-radius:6px;
+                               padding:6px 14px; cursor:pointer; font-size:0.95em;">✕ 닫기</button>
+            </div>
+            <!-- 페이지 이동 -->
+            <div style="display:flex; gap:10px; align-items:center; justify-content:center;">
+                <button onclick="millsheetPreviewPrev()"
+                        style="background:#333; color:#fff; border:1px solid #555; border-radius:6px;
+                               padding:6px 16px; cursor:pointer;">◀ 이전</button>
+                <span id="millsheetPreviewPageInfo" style="color:#A0A0A0; font-size:0.9em; min-width:80px; text-align:center;"></span>
+                <button onclick="millsheetPreviewNext()"
+                        style="background:#333; color:#fff; border:1px solid #555; border-radius:6px;
+                               padding:6px 16px; cursor:pointer;">다음 ▶</button>
+            </div>
+            <!-- 캔버스 -->
+            <div style="overflow:auto; flex:1; display:flex; justify-content:center; align-items:flex-start;">
+                <canvas id="millsheetPreviewCanvas"
+                        style="border:1px solid #333; border-radius:4px; max-width:100%;"></canvas>
+            </div>
+            <!-- 선택 버튼 -->
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button id="millsheetPreviewSelectBtn" onclick="toggleMillsheetPageFromModal()"
+                        style="padding:10px 28px; font-size:1em; font-weight:700; border:none;
+                               border-radius:8px; cursor:pointer;">
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

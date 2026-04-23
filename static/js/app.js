@@ -727,6 +727,8 @@ function t(key) {
             }
         }
 
+        let millsheetPreviewCurrentPage = 1;
+
         async function renderMillsheetThumbnails() {
             const container = document.getElementById('millsheetThumbnails');
             container.innerHTML = '<span style="color:#A0A0A0;font-size:0.85em;">페이지 로딩 중...</span>';
@@ -741,31 +743,115 @@ function t(key) {
                 await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
 
                 const wrapper = document.createElement('div');
+                wrapper.id = `millsheetThumb_${i}`;
                 wrapper.dataset.page = i;
-                wrapper.style.cssText = 'cursor:pointer;border:3px solid #444;border-radius:6px;padding:4px;text-align:center;background:#222;';
+                wrapper.style.cssText = 'cursor:pointer;border:3px solid #444;border-radius:6px;padding:4px;text-align:center;background:#222;position:relative;';
+
                 const lbl = document.createElement('div');
                 lbl.textContent = `${i}페이지`;
                 lbl.style.cssText = 'font-size:0.72em;color:#888;margin-top:3px;';
+
+                // 선택 상태 뱃지
+                const badge = document.createElement('div');
+                badge.id = `millsheetBadge_${i}`;
+                badge.style.cssText = 'display:none;position:absolute;top:4px;right:4px;background:#1976D2;' +
+                    'color:#fff;font-size:0.7em;font-weight:700;padding:2px 6px;border-radius:4px;';
+                badge.textContent = '✓ 선택';
+
+                wrapper.appendChild(badge);
                 wrapper.appendChild(canvas);
                 wrapper.appendChild(lbl);
-                wrapper.onclick = () => toggleMillsheetPage(wrapper, i);
+                wrapper.onclick = () => openMillsheetPreview(i);
                 container.appendChild(wrapper);
             }
             updateMillsheetStatus();
         }
 
-        function toggleMillsheetPage(wrapper, pageNum) {
+        async function openMillsheetPreview(pageNum) {
+            millsheetPreviewCurrentPage = pageNum;
+            const modal = document.getElementById('millsheetPreviewModal');
+            modal.style.display = 'flex';
+            await renderMillsheetPreviewPage(pageNum);
+        }
+
+        async function renderMillsheetPreviewPage(pageNum) {
+            const numPages = millsheetPdfDoc.numPages;
+            millsheetPreviewCurrentPage = pageNum;
+
+            document.getElementById('millsheetPreviewTitle').textContent =
+                `${millsheetFile.name}`;
+            document.getElementById('millsheetPreviewPageInfo').textContent =
+                `${pageNum} / ${numPages} 페이지`;
+
+            const page = await millsheetPdfDoc.getPage(pageNum);
+            // 모달 너비에 맞춰 scale 계산 (최대 800px 기준)
+            const maxW = Math.min(window.innerWidth * 0.82, 860);
+            const baseVp = page.getViewport({ scale: 1 });
+            const scale = maxW / baseVp.width;
+            const vp = page.getViewport({ scale });
+
+            const canvas = document.getElementById('millsheetPreviewCanvas');
+            canvas.width  = vp.width;
+            canvas.height = vp.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+            updatePreviewSelectButton(pageNum);
+        }
+
+        function updatePreviewSelectButton(pageNum) {
+            const btn = document.getElementById('millsheetPreviewSelectBtn');
+            const isSelected = millsheetSelectedPages.includes(pageNum);
+            if (isSelected) {
+                btn.textContent = '✓ 선택 해제';
+                btn.style.background = '#555';
+                btn.style.color = '#fff';
+            } else {
+                btn.textContent = '✓ 이 페이지 저장에 포함';
+                btn.style.background = '#1976D2';
+                btn.style.color = '#fff';
+            }
+        }
+
+        function toggleMillsheetPageFromModal() {
+            const pageNum = millsheetPreviewCurrentPage;
             const idx = millsheetSelectedPages.indexOf(pageNum);
+            const thumb = document.getElementById(`millsheetThumb_${pageNum}`);
+            const badge = document.getElementById(`millsheetBadge_${pageNum}`);
             if (idx === -1) {
                 millsheetSelectedPages.push(pageNum);
-                wrapper.style.borderColor = '#1976D2';
-                wrapper.style.background  = 'rgba(25,118,210,0.15)';
+                if (thumb) { thumb.style.borderColor = '#1976D2'; thumb.style.background = 'rgba(25,118,210,0.15)'; }
+                if (badge) badge.style.display = 'block';
             } else {
                 millsheetSelectedPages.splice(idx, 1);
-                wrapper.style.borderColor = '#444';
-                wrapper.style.background  = '#222';
+                if (thumb) { thumb.style.borderColor = '#444'; thumb.style.background = '#222'; }
+                if (badge) badge.style.display = 'none';
             }
+            updatePreviewSelectButton(pageNum);
             updateMillsheetStatus();
+        }
+
+        async function millsheetPreviewPrev() {
+            if (millsheetPreviewCurrentPage > 1)
+                await renderMillsheetPreviewPage(millsheetPreviewCurrentPage - 1);
+        }
+
+        async function millsheetPreviewNext() {
+            if (millsheetPreviewCurrentPage < millsheetPdfDoc.numPages)
+                await renderMillsheetPreviewPage(millsheetPreviewCurrentPage + 1);
+        }
+
+        function closeMillsheetPreview() {
+            document.getElementById('millsheetPreviewModal').style.display = 'none';
+        }
+
+        // 모달 배경 클릭 시 닫기
+        document.getElementById('millsheetPreviewModal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeMillsheetPreview();
+        });
+
+        function toggleMillsheetPage(wrapper, pageNum) {
+            // 하위 호환용 (직접 호출되는 경우 없으나 유지)
+            openMillsheetPreview(pageNum);
         }
 
         function updateMillsheetStatus() {
@@ -785,12 +871,14 @@ function t(key) {
             millsheetFile = null;
             millsheetPdfDoc = null;
             millsheetSelectedPages = [];
+            millsheetPreviewCurrentPage = 1;
             document.getElementById('millsheetFileInput').value = '';
             document.getElementById('millsheetFileName').textContent = '선택된 파일 없음';
             document.getElementById('millsheetClearBtn').style.display = 'none';
             document.getElementById('millsheetPageContainer').style.display = 'none';
             document.getElementById('millsheetThumbnails').innerHTML = '';
             document.getElementById('millsheetUploadStatus').textContent = '';
+            document.getElementById('millsheetPreviewModal').style.display = 'none';
         }
 
         async function doMillsheetUpload(powderName, lotNumber, overwrite = false) {
