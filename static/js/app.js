@@ -5884,50 +5884,40 @@ function t(key) {
 
         // 차트 객체 저장
         let charts = {
-            workProgress: null,
-            qualityRate: null,
-            dailyTrend: null,
-            powderStatus: null
+            blendingCompletion: null,
+            mixingInspection: null,
+            blendingByPowder: null,
+            ngStatus: null
         };
 
-        // 대시보드 자동 갱신 타이머
+        let dashboardPeriods = { completion: 'daily', inspection: 'daily', byPowder: 'today' };
         let dashboardRefreshTimer = null;
 
         // 대시보드 로드
         async function loadDashboard() {
             await loadDashboardKPI();
             await Promise.all([
-                loadWorkProgressChart('week'),
-                loadQualityRateChart(),
-                loadDailyTrendChart(),
-                loadPowderStatusChart()
+                loadBlendingCompletionChart(dashboardPeriods.completion),
+                loadMixingInspectionChart(dashboardPeriods.inspection),
+                loadBlendingByPowderChart(dashboardPeriods.byPowder)
             ]);
-
-            // KPI 색상 업데이트
             updateKpiColors();
-
-            // 마지막 갱신 시간 표시
             const now = new Date();
             const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
                             now.getMinutes().toString().padStart(2, '0') + ':' +
                             now.getSeconds().toString().padStart(2, '0');
-            const updateEl = document.getElementById('dashboardLastUpdate');
-            if (updateEl) updateEl.textContent = timeStr;
-
-            // 자동 갱신 시작 (60초)
+            const el = document.getElementById('dashboardLastUpdate');
+            if (el) el.textContent = timeStr;
             startDashboardAutoRefresh();
         }
 
         function updateKpiColors() {
-            // 합격률 색상
             const passRateEl = document.getElementById('kpiPassRate');
             if (passRateEl) {
                 const val = parseFloat(passRateEl.textContent);
-                if (!isNaN(val)) {
+                if (!isNaN(val))
                     passRateEl.style.color = val >= 95 ? '#4CAF50' : val >= 80 ? '#FFA726' : '#EF5350';
-                }
             }
-            // 불합격 건수 색상
             const failEl = document.getElementById('kpiFailCount');
             if (failEl) {
                 const val = parseInt(failEl.textContent);
@@ -5938,23 +5928,18 @@ function t(key) {
         function startDashboardAutoRefresh() {
             if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
             dashboardRefreshTimer = setInterval(async () => {
-                // 대시보드가 현재 활성 페이지일 때만 갱신
-                const dashboardPage = document.getElementById('dashboard');
-                if (dashboardPage && dashboardPage.classList.contains('active')) {
+                const pg = document.getElementById('dashboard');
+                if (pg && pg.classList.contains('active')) {
                     await loadDashboardKPI();
                     await Promise.all([
-                        loadWorkProgressChart(document.getElementById('progressDateFilter')?.value || 'week'),
-                        loadQualityRateChart(),
-                        loadDailyTrendChart(),
-                        loadPowderStatusChart()
+                        loadBlendingCompletionChart(dashboardPeriods.completion),
+                        loadMixingInspectionChart(dashboardPeriods.inspection),
+                        loadBlendingByPowderChart(dashboardPeriods.byPowder)
                     ]);
                     updateKpiColors();
                     const now = new Date();
-                    const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
-                                    now.getMinutes().toString().padStart(2, '0') + ':' +
-                                    now.getSeconds().toString().padStart(2, '0');
-                    const updateEl = document.getElementById('dashboardLastUpdate');
-                    if (updateEl) updateEl.textContent = timeStr;
+                    const el = document.getElementById('dashboardLastUpdate');
+                    if (el) el.textContent = now.toTimeString().slice(0, 8);
                 }
             }, 60000);
         }
@@ -5964,384 +5949,148 @@ function t(key) {
             try {
                 const response = await fetch(`${API_BASE}/api/dashboard/kpi`);
                 const data = await response.json();
-
                 if (data.success) {
-                    document.getElementById('kpiTodayInspections').textContent = data.data.today_inspections;
-                    document.getElementById('kpiWorkProgress').textContent = data.data.work_progress;
-                    document.getElementById('kpiPassRate').textContent = data.data.pass_rate;
-                    document.getElementById('kpiFailCount').textContent = data.data.fail_count;
+                    document.getElementById('kpiTodayBlending').textContent = data.data.today_blending;
+                    document.getElementById('kpiWeekBlending').textContent  = data.data.week_blending;
+                    document.getElementById('kpiPassRate').textContent       = data.data.pass_rate;
+                    document.getElementById('kpiFailCount').textContent      = data.data.fail_count;
                 }
-            } catch (error) {
-                console.error('KPI 로드 실패:', error);
-            }
+            } catch (e) { console.error('KPI 로드 실패:', e); }
         }
 
-        // 작업지시 진도율 차트
-        async function loadWorkProgressChart(filter = 'week') {
+        // ── 공통 헬퍼 ──
+        function setTabActive(tabGroupId, activeBtn) {
+            document.querySelectorAll(`#${tabGroupId} .chart-tab`).forEach(b => b.classList.remove('active'));
+            if (activeBtn) activeBtn.classList.add('active');
+        }
+        function emptyChart(elId, msg) {
+            document.getElementById(elId).innerHTML =
+                `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">${msg}</div>`;
+        }
+        function chartHeight(elId) {
+            const el = document.getElementById(elId);
+            return el ? (el.clientHeight || 280) : 280;
+        }
+
+        // ── 좌상: 배합작업 완료현황 ──
+        function switchBlendingCompletionPeriod(period, btn) {
+            dashboardPeriods.completion = period;
+            setTabActive('blendingCompletionTabs', btn);
+            loadBlendingCompletionChart(period);
+        }
+
+        async function loadBlendingCompletionChart(period = 'daily') {
             try {
-                const response = await fetch(`${API_BASE}/api/dashboard/work-progress?filter=${filter}`);
-                const data = await response.json();
-
-                if (data.success && data.data.length > 0) {
-                    const categories = data.data.map(item => item.work_order);
-                    const progressData = data.data.map(item => item.progress);
-                    const targetData = data.data.map(item => item.target);
-                    const completedData = data.data.map(item => item.completed);
-
-                    const chartEl = document.querySelector("#chartWorkProgress");
-                    const chartHeight = chartEl ? chartEl.clientHeight || 300 : 300;
-
-                    const options = {
-                        series: [{
-                            name: '진도율',
-                            data: progressData
-                        }],
-                        chart: {
-                            type: 'bar',
-                            height: chartHeight,
-                            toolbar: { show: false },
-                            foreColor: '#A0A0A0'
-                        },
-                        plotOptions: {
-                            bar: {
-                                horizontal: true,
-                                borderRadius: 8,
-                                dataLabels: {
-                                    position: 'top'
-                                }
-                            }
-                        },
-                        dataLabels: {
-                            enabled: true,
-                            formatter: function (val) {
-                                return val.toFixed(1) + '%';
-                            },
-                            offsetX: -10,
-                            style: {
-                                fontSize: '12px',
-                                colors: ['#E8E8E8']
-                            }
-                        },
-                        colors: ['#F07D00'],
-                        xaxis: {
-                            categories: categories,
-                            max: 100,
-                            labels: {
-                                formatter: function (val) {
-                                    return val + '%';
-                                }
-                            }
-                        },
-                        yaxis: {
-                            labels: {
-                                style: {
-                                    fontSize: '11px'
-                                }
-                            }
-                        },
-                        tooltip: {
-                            theme: 'dark',
-                            custom: function({series, seriesIndex, dataPointIndex, w}) {
-                                const target = targetData[dataPointIndex];
-                                const completed = completedData[dataPointIndex];
-                                const progress = progressData[dataPointIndex];
-                                return `<div style="padding: 10px; background: #242424; color: #E8E8E8;">
-                                    <strong>${categories[dataPointIndex]}</strong><br/>
-                                    목표: ${target.toLocaleString()} kg<br/>
-                                    완료: ${completed.toLocaleString()} kg<br/>
-                                    진도율: ${progress.toFixed(1)}%
-                                </div>`;
-                            }
-                        },
-                        grid: {
-                            borderColor: '#333'
-                        }
-                    };
-
-                    if (charts.workProgress) {
-                        charts.workProgress.destroy();
-                    }
-                    charts.workProgress = new ApexCharts(document.querySelector("#chartWorkProgress"), options);
-                    charts.workProgress.render();
-                } else {
-                    document.getElementById('chartWorkProgress').innerHTML =
-                        '<div style="text-align:center;padding:50px;color:#666;">작업지시 데이터가 없습니다</div>';
+                const res  = await fetch(`${API_BASE}/api/dashboard/blending-completion?period=${period}`);
+                const data = await res.json();
+                if (!data.success || !data.data.length) {
+                    emptyChart('chartBlendingCompletion', '데이터가 없습니다'); return;
                 }
-            } catch (error) {
-                console.error('작업진도율 차트 로드 실패:', error);
-            }
+                const opts = {
+                    series: [{ name: '완료 건수', data: data.data.map(d => d.count) }],
+                    chart: { type: 'bar', height: chartHeight('chartBlendingCompletion'),
+                             toolbar: { show: false }, foreColor: '#A0A0A0' },
+                    colors: ['#F07D00'],
+                    plotOptions: { bar: { borderRadius: 5, columnWidth: '55%',
+                        dataLabels: { position: 'top' } } },
+                    dataLabels: { enabled: true, offsetY: -18,
+                        style: { fontSize: '12px', colors: ['#E0E0E0'] } },
+                    xaxis: { categories: data.data.map(d => d.label) },
+                    yaxis: { title: { text: '완료 건수' }, min: 0,
+                             labels: { formatter: v => Math.round(v) } },
+                    tooltip: { theme: 'dark' },
+                    grid: { borderColor: '#333' }
+                };
+                if (charts.blendingCompletion) charts.blendingCompletion.destroy();
+                charts.blendingCompletion = new ApexCharts(document.getElementById('chartBlendingCompletion'), opts);
+                charts.blendingCompletion.render();
+            } catch (e) { console.error('배합완료현황 차트 실패:', e); }
         }
 
-        // 현재 선택된 품질 합격률 탭
-        let currentQualityCategory = 'incoming';
-
-        // 탭 전환 함수
-        function switchQualityTab(category) {
-            currentQualityCategory = category;
-            document.querySelectorAll('#qualityRateTabs .chart-tab').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.category === category);
-            });
-            loadQualityRateChart(category);
+        // ── 우상: 배합분말 검사현황 (stacked bar) ──
+        function switchMixingInspectionPeriod(period, btn) {
+            dashboardPeriods.inspection = period;
+            setTabActive('mixingInspectionTabs', btn);
+            loadMixingInspectionChart(period);
         }
 
-        // 합격률 도넛 차트
-        async function loadQualityRateChart(category) {
-            if (!category) category = currentQualityCategory;
+        async function loadMixingInspectionChart(period = 'daily') {
             try {
-                const response = await fetch(`${API_BASE}/api/dashboard/quality-rate?category=${category}`);
-                const data = await response.json();
-
-                if (data.success && data.data) {
-                    const passed = data.data.passed || 0;
-                    const failed = data.data.failed || 0;
-                    const inProgress = data.data.in_progress || 0;
-
-                    // 모두 0이면 빈 상태 표시
-                    if (passed === 0 && failed === 0 && inProgress === 0) {
-                        if (charts.qualityRate) { charts.qualityRate.destroy(); charts.qualityRate = null; }
-                        document.getElementById('chartQualityRate').innerHTML =
-                            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.95rem;">해당 기간 검사 데이터가 없습니다</div>';
-                        document.getElementById('legendPassCount').textContent = '0';
-                        document.getElementById('legendFailCount').textContent = '0';
-                        document.getElementById('legendInProgressCount').textContent = '0';
-                        return;
-                    }
-
-                    // 범례 업데이트
-                    document.getElementById('legendPassCount').textContent = passed;
-                    document.getElementById('legendFailCount').textContent = failed;
-                    document.getElementById('legendInProgressCount').textContent = inProgress;
-
-                    const qualityChartEl = document.querySelector("#chartQualityRate");
-                    const qualityChartHeight = qualityChartEl ? qualityChartEl.clientHeight || 300 : 300;
-
-                    const options = {
-                        series: [passed, failed, inProgress],
-                        labels: ['합격', '불합격', '진행중'],
-                        chart: {
-                            type: 'donut',
-                            height: qualityChartHeight,
-                            foreColor: '#A0A0A0'
-                        },
-                        tooltip: {
-                            theme: 'dark'
-                        },
-                        colors: ['#4CAF50', '#EF5350', '#F07D00'],
-                        dataLabels: {
-                            enabled: true,
-                            formatter: function (val, opts) {
-                                return opts.w.config.series[opts.seriesIndex];
-                            }
-                        },
-                        legend: {
-                            show: false
-                        },
-                        plotOptions: {
-                            pie: {
-                                donut: {
-                                    size: '65%',
-                                    labels: {
-                                        show: true,
-                                        total: {
-                                            show: true,
-                                            label: '총 검사',
-                                            fontSize: '16px',
-                                            fontWeight: 600,
-                                            color: '#A0A0A0',
-                                            formatter: function (w) {
-                                                return w.globals.seriesTotals.reduce((a, b) => a + b, 0);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-                    if (charts.qualityRate) {
-                        charts.qualityRate.destroy();
-                    }
-                    charts.qualityRate = new ApexCharts(document.querySelector("#chartQualityRate"), options);
-                    charts.qualityRate.render();
+                const res  = await fetch(`${API_BASE}/api/dashboard/mixing-inspection?period=${period}`);
+                const data = await res.json();
+                if (!data.success || !data.data.length) {
+                    emptyChart('chartMixingInspection', '데이터가 없습니다'); return;
                 }
-            } catch (error) {
-                console.error('합격률 차트 로드 실패:', error);
-            }
+                const opts = {
+                    series: [
+                        { name: '완료', data: data.data.map(d => d.completed) },
+                        { name: '진행중', data: data.data.map(d => d.in_progress) }
+                    ],
+                    chart: { type: 'bar', height: chartHeight('chartMixingInspection'),
+                             stacked: true, toolbar: { show: false }, foreColor: '#A0A0A0' },
+                    colors: ['#4CAF50', '#F07D00'],
+                    plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
+                    dataLabels: { enabled: true,
+                        formatter: (val) => val > 0 ? val : '',
+                        style: { fontSize: '11px', colors: ['#fff'] } },
+                    xaxis: { categories: data.data.map(d => d.label) },
+                    yaxis: { title: { text: '건수' }, min: 0,
+                             labels: { formatter: v => Math.round(v) } },
+                    tooltip: { theme: 'dark',
+                        y: { formatter: (val, { seriesIndex, dataPointIndex, w }) => {
+                            const t = w.config.series.reduce((s, sr) => s + sr.data[dataPointIndex], 0);
+                            return `${val}건 (대상 ${data.data[dataPointIndex].target}건)`;
+                        }}
+                    },
+                    legend: { position: 'top', horizontalAlign: 'right' },
+                    grid: { borderColor: '#333' }
+                };
+                if (charts.mixingInspection) charts.mixingInspection.destroy();
+                charts.mixingInspection = new ApexCharts(document.getElementById('chartMixingInspection'), opts);
+                charts.mixingInspection.render();
+            } catch (e) { console.error('배합검사현황 차트 실패:', e); }
         }
 
-        // 현재 선택된 일별 추이 탭
-        let currentDailyTrendCategory = 'incoming';
-
-        // 일별 추이 탭 전환 함수
-        function switchDailyTrendTab(category) {
-            currentDailyTrendCategory = category;
-            document.querySelectorAll('#dailyTrendTabs .chart-tab').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.category === category);
-            });
-            loadDailyTrendChart(category);
+        // ── 좌하: 배합분말별 작업현황 ──
+        function switchBlendingByPowderPeriod(period, btn) {
+            dashboardPeriods.byPowder = period;
+            setTabActive('blendingByPowderTabs', btn);
+            loadBlendingByPowderChart(period);
         }
 
-        // 일별 검사 추이 차트
-        async function loadDailyTrendChart(category) {
-            if (!category) category = currentDailyTrendCategory;
+        async function loadBlendingByPowderChart(period = 'today') {
             try {
-                const response = await fetch(`${API_BASE}/api/dashboard/daily-trend`);
-                const data = await response.json();
-
-                if (data.success) {
-                    const dates = data.data.map(item => {
-                        const date = new Date(item.date);
-                        return `${date.getMonth() + 1}/${date.getDate()}`;
-                    });
-
-                    const seriesData = data.data.map(item => category === 'incoming' ? item.incoming : item.mixing);
-                    const seriesName = category === 'incoming' ? '수입분말' : '배합분말';
-                    const seriesColor = category === 'incoming' ? '#F07D00' : '#AB47BC';
-
-                    const trendChartEl = document.querySelector("#chartDailyTrend");
-                    const trendChartHeight = trendChartEl ? trendChartEl.clientHeight || 300 : 300;
-
-                    const options = {
-                        series: [{
-                            name: seriesName,
-                            data: seriesData
-                        }],
-                        chart: {
-                            type: 'line',
-                            height: trendChartHeight,
-                            toolbar: { show: false },
-                            foreColor: '#A0A0A0'
-                        },
-                        colors: [seriesColor],
-                        stroke: {
-                            width: 3,
-                            curve: 'smooth'
-                        },
-                        dataLabels: {
-                            enabled: false
-                        },
-                        tooltip: {
-                            theme: 'dark'
-                        },
-                        xaxis: {
-                            categories: dates
-                        },
-                        yaxis: {
-                            title: {
-                                text: '검사 건수'
-                            }
-                        },
-                        legend: {
-                            position: 'top',
-                            horizontalAlign: 'right'
-                        },
-                        grid: {
-                            borderColor: '#333'
-                        },
-                        markers: {
-                            size: 4,
-                            strokeWidth: 0,
-                            hover: {
-                                size: 7
-                            }
-                        }
-                    };
-
-                    if (charts.dailyTrend) {
-                        charts.dailyTrend.destroy();
-                    }
-                    charts.dailyTrend = new ApexCharts(document.querySelector("#chartDailyTrend"), options);
-                    charts.dailyTrend.render();
+                const res  = await fetch(`${API_BASE}/api/dashboard/blending-by-powder?period=${period}`);
+                const data = await res.json();
+                if (!data.success || !data.data.length) {
+                    emptyChart('chartBlendingByPowder', '데이터가 없습니다'); return;
                 }
-            } catch (error) {
-                console.error('일별 추이 차트 로드 실패:', error);
-            }
+                const opts = {
+                    series: [{ name: '작업 건수', data: data.data.map(d => d.count) }],
+                    chart: { type: 'bar', height: chartHeight('chartBlendingByPowder'),
+                             toolbar: { show: false }, foreColor: '#A0A0A0' },
+                    colors: ['#AB47BC'],
+                    plotOptions: { bar: { horizontal: true, borderRadius: 5, barHeight: '60%',
+                        dataLabels: { position: 'top' } } },
+                    dataLabels: { enabled: true, offsetX: 20,
+                        style: { fontSize: '12px', colors: ['#E0E0E0'] } },
+                    xaxis: { categories: data.data.map(d => d.powder),
+                             labels: { formatter: v => Math.round(v) } },
+                    tooltip: { theme: 'dark' },
+                    grid: { borderColor: '#333' }
+                };
+                if (charts.blendingByPowder) charts.blendingByPowder.destroy();
+                charts.blendingByPowder = new ApexCharts(document.getElementById('chartBlendingByPowder'), opts);
+                charts.blendingByPowder.render();
+            } catch (e) { console.error('분말별작업현황 차트 실패:', e); }
         }
 
-        // 분말별 검사 현황 차트
-        async function loadPowderStatusChart() {
-            try {
-                const response = await fetch(`${API_BASE}/api/dashboard/powder-status`);
-                const data = await response.json();
+        // (하위 호환) 구 함수명 참조가 남아있을 경우 대비
+        async function loadWorkProgressChart() {}
+        async function loadQualityRateChart() {}
+        async function loadDailyTrendChart() {}
+        async function loadPowderStatusChart() {}
 
-                if (data.success && data.data.length > 0) {
-                    const categories = data.data.map(item => item.powder);
-                    const passedData = data.data.map(item => item.passed);
-                    const failedData = data.data.map(item => item.failed);
-
-                    const powderChartEl = document.querySelector("#chartPowderStatus");
-                    const powderChartHeight = powderChartEl ? powderChartEl.clientHeight || 300 : 300;
-
-                    const options = {
-                        series: [{
-                            name: '합격',
-                            data: passedData
-                        }, {
-                            name: '불합격',
-                            data: failedData
-                        }],
-                        chart: {
-                            type: 'bar',
-                            height: powderChartHeight,
-                            stacked: true,
-                            toolbar: { show: false },
-                            foreColor: '#A0A0A0'
-                        },
-                        colors: ['#4CAF50', '#EF5350'],
-                        plotOptions: {
-                            bar: {
-                                horizontal: true,
-                                borderRadius: 6
-                            }
-                        },
-                        dataLabels: {
-                            enabled: true
-                        },
-                        tooltip: {
-                            theme: 'dark'
-                        },
-                        xaxis: {
-                            categories: categories
-                        },
-                        yaxis: {
-                            labels: {
-                                style: {
-                                    fontSize: '11px'
-                                }
-                            }
-                        },
-                        legend: {
-                            position: 'top',
-                            horizontalAlign: 'right'
-                        },
-                        grid: {
-                            borderColor: '#333'
-                        }
-                    };
-
-                    if (charts.powderStatus) {
-                        charts.powderStatus.destroy();
-                    }
-                    charts.powderStatus = new ApexCharts(document.querySelector("#chartPowderStatus"), options);
-                    charts.powderStatus.render();
-                } else {
-                    document.getElementById('chartPowderStatus').innerHTML =
-                        '<div style="text-align:center;padding:50px;color:#666;">검사 데이터가 없습니다</div>';
-                }
-            } catch (error) {
-                console.error('분말별 현황 차트 로드 실패:', error);
-            }
-        }
-
-        // 진도율 필터 변경 이벤트
-        document.addEventListener('DOMContentLoaded', function() {
-            const progressFilter = document.getElementById('progressDateFilter');
-            if (progressFilter) {
-                progressFilter.addEventListener('change', function() {
-                    loadWorkProgressChart(this.value);
-                });
-            }
-        });
 
         // ==========================================
         // 자동입력 작업 화면 관련 함수

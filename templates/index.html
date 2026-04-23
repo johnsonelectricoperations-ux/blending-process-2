@@ -138,22 +138,22 @@
             <!-- KPI 상단 바 -->
             <div class="dashboard-kpi-bar">
                 <div class="kpi-card">
-                    <div class="kpi-label">오늘 검사 건수</div>
-                    <div class="kpi-value" id="kpiTodayInspections">-</div>
-                    <div class="kpi-sub">건 (진행중 포함)</div>
+                    <div class="kpi-label">오늘 배합 완료</div>
+                    <div class="kpi-value" id="kpiTodayBlending">-</div>
+                    <div class="kpi-sub">건</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">주간 작업 진행률</div>
-                    <div class="kpi-value" id="kpiWorkProgress">-</div>
-                    <div class="kpi-sub">%</div>
+                    <div class="kpi-label">주간 배합 완료</div>
+                    <div class="kpi-value" id="kpiWeekBlending">-</div>
+                    <div class="kpi-sub">건</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">주간 합격률</div>
+                    <div class="kpi-label">주간 검사 합격률</div>
                     <div class="kpi-value kpi-pass" id="kpiPassRate">-</div>
                     <div class="kpi-sub">%</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">주간 불합격</div>
+                    <div class="kpi-label">주간 검사 NG</div>
                     <div class="kpi-value kpi-fail" id="kpiFailCount">0</div>
                     <div class="kpi-sub">건</div>
                 </div>
@@ -161,68 +161,54 @@
 
             <!-- 차트 2x2 그리드 -->
             <div class="dashboard-chart-grid">
-                <!-- 좌상: 작업지시 진행현황 -->
+                <!-- 좌상: 배합작업 완료현황 -->
                 <div class="dashboard-chart-card">
                     <div class="chart-card-header">
-                        <span class="chart-card-title">작업지시 진행현황</span>
-                        <select id="progressDateFilter" class="chart-filter-select">
-                            <option value="week" selected>이번 주</option>
-                            <option value="today">오늘</option>
-                            <option value="month">이번 달</option>
-                        </select>
-                    </div>
-                    <div id="chartWorkProgress" class="chart-container"></div>
-                </div>
-
-                <!-- 우상: 품질 합격률 -->
-                <div class="dashboard-chart-card">
-                    <div class="chart-card-header">
-                        <span class="chart-card-title">품질 합격률 (주간)</span>
-                        <div class="chart-tab-group" id="qualityRateTabs">
-                            <button class="chart-tab active" data-category="incoming" onclick="switchQualityTab('incoming')">수입분말</button>
-                            <button class="chart-tab" data-category="mixing" onclick="switchQualityTab('mixing')">배합분말</button>
+                        <span class="chart-card-title">배합작업 완료현황</span>
+                        <div class="chart-tab-group" id="blendingCompletionTabs">
+                            <button class="chart-tab active" onclick="switchBlendingCompletionPeriod('daily', this)">일별</button>
+                            <button class="chart-tab" onclick="switchBlendingCompletionPeriod('weekly', this)">주별</button>
+                            <button class="chart-tab" onclick="switchBlendingCompletionPeriod('monthly', this)">월별</button>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 20px; height: calc(100% - 50px);">
-                        <div id="chartQualityRate" class="chart-container" style="flex: 1;"></div>
-                        <div class="quality-legend">
-                            <div class="legend-item">
-                                <span class="legend-dot" style="background: #4CAF50;"></span>
-                                <span class="legend-label">합격</span>
-                                <span class="legend-count" id="legendPassCount">0</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-dot" style="background: #EF5350;"></span>
-                                <span class="legend-label">불합격</span>
-                                <span class="legend-count" id="legendFailCount">0</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-dot" style="background: #F07D00;"></span>
-                                <span class="legend-label">진행중</span>
-                                <span class="legend-count" id="legendInProgressCount">0</span>
-                            </div>
-                        </div>
-                    </div>
+                    <div id="chartBlendingCompletion" class="chart-container"></div>
                 </div>
 
-                <!-- 좌하: 7일간 검사 추이 -->
+                <!-- 우상: 배합분말 검사현황 -->
                 <div class="dashboard-chart-card">
                     <div class="chart-card-header">
-                        <span class="chart-card-title">7일간 검사 추이</span>
-                        <div class="chart-tab-group" id="dailyTrendTabs">
-                            <button class="chart-tab active" data-category="incoming" onclick="switchDailyTrendTab('incoming')">수입분말</button>
-                            <button class="chart-tab" data-category="mixing" onclick="switchDailyTrendTab('mixing')">배합분말</button>
+                        <span class="chart-card-title">배합분말 검사현황</span>
+                        <div class="chart-tab-group" id="mixingInspectionTabs">
+                            <button class="chart-tab active" onclick="switchMixingInspectionPeriod('daily', this)">일별</button>
+                            <button class="chart-tab" onclick="switchMixingInspectionPeriod('weekly', this)">주별</button>
+                            <button class="chart-tab" onclick="switchMixingInspectionPeriod('monthly', this)">월별</button>
                         </div>
                     </div>
-                    <div id="chartDailyTrend" class="chart-container"></div>
+                    <div id="chartMixingInspection" class="chart-container"></div>
                 </div>
 
-                <!-- 우하: 분말별 품질현황 -->
+                <!-- 좌하: 배합분말별 작업현황 -->
                 <div class="dashboard-chart-card">
                     <div class="chart-card-header">
-                        <span class="chart-card-title">분말별 품질현황 (주간 Top 8)</span>
+                        <span class="chart-card-title">배합분말별 작업현황</span>
+                        <div class="chart-tab-group" id="blendingByPowderTabs">
+                            <button class="chart-tab active" onclick="switchBlendingByPowderPeriod('today', this)">오늘</button>
+                            <button class="chart-tab" onclick="switchBlendingByPowderPeriod('week', this)">주간</button>
+                            <button class="chart-tab" onclick="switchBlendingByPowderPeriod('month', this)">월간</button>
+                        </div>
                     </div>
-                    <div id="chartPowderStatus" class="chart-container"></div>
+                    <div id="chartBlendingByPowder" class="chart-container"></div>
+                </div>
+
+                <!-- 우하: 검사 NG 현황 (추후 구현) -->
+                <div class="dashboard-chart-card">
+                    <div class="chart-card-header">
+                        <span class="chart-card-title">검사 NG 현황</span>
+                    </div>
+                    <div id="chartNgStatus" class="chart-container"
+                         style="display:flex;align-items:center;justify-content:center;">
+                        <span style="color:#555;font-size:0.95em;">추후 구현 예정</span>
+                    </div>
                 </div>
             </div>
 

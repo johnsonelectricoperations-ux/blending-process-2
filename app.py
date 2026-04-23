@@ -4139,57 +4139,55 @@ def get_dashboard_kpi():
             today = date.today().isoformat()
             week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
 
-            # 1. 오늘 검사 건수
+            # 1. 오늘 배합 완료 건수
             cursor.execute('''
-                SELECT COUNT(*) FROM inspection_result
-                WHERE DATE(inspection_time) = ?
+                SELECT COUNT(*) FROM blending_work
+                WHERE DATE(end_time) = ? AND status='completed'
+                AND (is_hidden IS NULL OR is_hidden=0)
             ''', (today,))
-            today_inspections = cursor.fetchone()[0]
+            today_blending = cursor.fetchone()[0]
 
-            # 2. 작업 진도율 (이번주)
+            # 2. 이번주 배합 완료 건수
             cursor.execute('''
-                SELECT COALESCE(SUM(total_target_weight), 0)
-                FROM blending_order
-                WHERE DATE(created_date) >= ?
+                SELECT COUNT(*) FROM blending_work
+                WHERE DATE(end_time) >= ? AND status='completed'
+                AND (is_hidden IS NULL OR is_hidden=0)
             ''', (week_start,))
-            target_weight = cursor.fetchone()[0] or 0
+            week_blending = cursor.fetchone()[0]
 
-            cursor.execute('''
-                SELECT COALESCE(SUM(actual_total_weight), 0)
-                FROM blending_work
-                WHERE DATE(start_time) >= ? AND status = 'completed'
-            ''', (week_start,))
-            actual_weight = cursor.fetchone()[0] or 0
-
-            work_progress = round((actual_weight / target_weight * 100), 1) if target_weight > 0 else 0
-
-            # 3. 이번주 합격률
+            # 3. 배합분말 검사 합격률 (이번주)
             cursor.execute('''
                 SELECT COUNT(*) FROM inspection_result
-                WHERE DATE(inspection_time) >= ? AND final_result IS NOT NULL
+                WHERE category='mixing' AND DATE(inspection_time) >= ?
+                AND final_result IN ('PASS','FAIL')
+                AND (is_hidden IS NULL OR is_hidden=0)
             ''', (week_start,))
-            total_inspections = cursor.fetchone()[0]
+            total_mix = cursor.fetchone()[0]
 
             cursor.execute('''
                 SELECT COUNT(*) FROM inspection_result
-                WHERE DATE(inspection_time) >= ? AND final_result = 'PASS'
+                WHERE category='mixing' AND DATE(inspection_time) >= ?
+                AND final_result = 'PASS'
+                AND (is_hidden IS NULL OR is_hidden=0)
             ''', (week_start,))
-            passed_inspections = cursor.fetchone()[0]
+            passed_mix = cursor.fetchone()[0]
 
-            pass_rate = round((passed_inspections / total_inspections * 100), 1) if total_inspections > 0 else 0
+            pass_rate = round((passed_mix / total_mix * 100), 1) if total_mix > 0 else 0
 
-            # 4. 이번주 불합격 건수
+            # 4. 이번주 배합검사 NG 건수
             cursor.execute('''
                 SELECT COUNT(*) FROM inspection_result
-                WHERE DATE(inspection_time) >= ? AND final_result = 'FAIL'
+                WHERE category='mixing' AND DATE(inspection_time) >= ?
+                AND final_result = 'FAIL'
+                AND (is_hidden IS NULL OR is_hidden=0)
             ''', (week_start,))
             fail_count = cursor.fetchone()[0]
 
             return jsonify({
                 'success': True,
                 'data': {
-                    'today_inspections': today_inspections,
-                    'work_progress': work_progress,
+                    'today_blending': today_blending,
+                    'week_blending': week_blending,
                     'pass_rate': pass_rate,
                     'fail_count': fail_count
                 }
@@ -4404,9 +4402,205 @@ def get_powder_status():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+
 # ============================================
-# 서버 실행
+# 대시보드 신규 API (배합 중심)
 # ============================================
+
+@app.route('/api/dashboard/blending-completion', methods=['GET'])
+def dashboard_blending_completion():
+    """배합작업 완료현황 - 일별/주별/월별"""
+    period = request.args.get('period', 'daily')
+    try:
+        from datetime import date, timedelta
+        from calendar import monthrange
+        today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            results = []
+
+            if period == 'daily':
+                dates = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+                cursor.execute("""
+                    SELECT DATE(end_time) as day, COUNT(*) as cnt
+                    FROM blending_work
+                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(end_time) >= ?
+                    GROUP BY day
+                """, (dates[0],))
+                data_map = {row[0]: row[1] for row in cursor.fetchall()}
+                results = [{'label': d[5:].replace('-', '/'), 'count': data_map.get(d, 0)} for d in dates]
+
+            elif period == 'weekly':
+                monday = today - timedelta(days=today.weekday())
+                weeks = [(monday - timedelta(weeks=i), monday - timedelta(weeks=i) + timedelta(days=6))
+                         for i in range(6, -1, -1)]
+                cursor.execute("""
+                    SELECT DATE(end_time) as day, COUNT(*) as cnt
+                    FROM blending_work
+                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(end_time) >= ?
+                    GROUP BY day
+                """, (weeks[0][0].isoformat(),))
+                day_map = {row[0]: row[1] for row in cursor.fetchall()}
+                for ws, we in weeks:
+                    count = sum(day_map.get((ws + timedelta(days=j)).isoformat(), 0) for j in range(7))
+                    results.append({'label': f"{ws.month}/{ws.day}주", 'count': count})
+
+            elif period == 'monthly':
+                for i in range(6, -1, -1):
+                    m = today.month - i
+                    y = today.year
+                    while m <= 0:
+                        m += 12
+                        y -= 1
+                    ms = date(y, m, 1).isoformat()
+                    me = date(y, m, monthrange(y, m)[1]).isoformat()
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM blending_work
+                        WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                        AND DATE(end_time) >= ? AND DATE(end_time) <= ?
+                    """, (ms, me))
+                    results.append({'label': f"{y}/{m:02d}", 'count': cursor.fetchone()[0]})
+
+            return jsonify({'success': True, 'data': results})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/dashboard/blending-by-powder', methods=['GET'])
+def dashboard_blending_by_powder():
+    """배합분말별 작업현황 - 오늘/주간/월간"""
+    period = request.args.get('period', 'today')
+    try:
+        from datetime import date, timedelta
+        today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+
+            if period == 'today':
+                cursor.execute("""
+                    SELECT product_name, COUNT(*) as cnt
+                    FROM blending_work
+                    WHERE (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(COALESCE(end_time, start_time)) = ?
+                    GROUP BY product_name ORDER BY cnt DESC LIMIT 10
+                """, (today.isoformat(),))
+            elif period == 'week':
+                monday = (today - timedelta(days=today.weekday())).isoformat()
+                cursor.execute("""
+                    SELECT product_name, COUNT(*) as cnt
+                    FROM blending_work
+                    WHERE (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(COALESCE(end_time, start_time)) >= ?
+                    GROUP BY product_name ORDER BY cnt DESC LIMIT 10
+                """, (monday,))
+            else:
+                month_start = date(today.year, today.month, 1).isoformat()
+                cursor.execute("""
+                    SELECT product_name, COUNT(*) as cnt
+                    FROM blending_work
+                    WHERE (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(COALESCE(end_time, start_time)) >= ?
+                    GROUP BY product_name ORDER BY cnt DESC LIMIT 10
+                """, (month_start,))
+
+            results = [{'powder': row[0], 'count': row[1]} for row in cursor.fetchall()]
+            return jsonify({'success': True, 'data': results})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/dashboard/mixing-inspection', methods=['GET'])
+def dashboard_mixing_inspection():
+    """배합분말 검사현황 - 일별/주별/월별 (대상/완료/진행중)"""
+    period = request.args.get('period', 'daily')
+    try:
+        from datetime import date, timedelta
+        from calendar import monthrange
+        today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            results = []
+
+            def fetch_day_map(query, param):
+                cursor.execute(query, (param,))
+                return {row[0]: row[1] for row in cursor.fetchall()}
+
+            if period == 'daily':
+                dates = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+                target_map = fetch_day_map("""
+                    SELECT DATE(end_time) as day, COUNT(*) FROM blending_work
+                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(end_time) >= ? GROUP BY day
+                """, dates[0])
+                done_map = fetch_day_map("""
+                    SELECT DATE(inspection_time) as day, COUNT(*) FROM inspection_result
+                    WHERE category='mixing' AND final_result IN ('PASS','FAIL')
+                    AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(inspection_time) >= ? GROUP BY day
+                """, dates[0])
+                for d in dates:
+                    t = target_map.get(d, 0)
+                    c = done_map.get(d, 0)
+                    results.append({'label': d[5:].replace('-', '/'), 'target': t,
+                                    'completed': c, 'in_progress': max(0, t - c)})
+
+            elif period == 'weekly':
+                monday = today - timedelta(days=today.weekday())
+                weeks = [(monday - timedelta(weeks=i), monday - timedelta(weeks=i) + timedelta(days=6))
+                         for i in range(6, -1, -1)]
+                start = weeks[0][0].isoformat()
+                target_map = fetch_day_map("""
+                    SELECT DATE(end_time), COUNT(*) FROM blending_work
+                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(end_time) >= ? GROUP BY DATE(end_time)
+                """, start)
+                done_map = fetch_day_map("""
+                    SELECT DATE(inspection_time), COUNT(*) FROM inspection_result
+                    WHERE category='mixing' AND final_result IN ('PASS','FAIL')
+                    AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(inspection_time) >= ? GROUP BY DATE(inspection_time)
+                """, start)
+                for ws, we in weeks:
+                    t = sum(target_map.get((ws + timedelta(days=j)).isoformat(), 0) for j in range(7))
+                    c = sum(done_map.get((ws + timedelta(days=j)).isoformat(), 0) for j in range(7))
+                    results.append({'label': f"{ws.month}/{ws.day}주", 'target': t,
+                                    'completed': c, 'in_progress': max(0, t - c)})
+
+            elif period == 'monthly':
+                for i in range(6, -1, -1):
+                    m = today.month - i
+                    y = today.year
+                    while m <= 0:
+                        m += 12
+                        y -= 1
+                    ms = date(y, m, 1).isoformat()
+                    me = date(y, m, monthrange(y, m)[1]).isoformat()
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM blending_work
+                        WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
+                        AND DATE(end_time) >= ? AND DATE(end_time) <= ?
+                    """, (ms, me))
+                    t = cursor.fetchone()[0]
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM inspection_result
+                        WHERE category='mixing' AND final_result IN ('PASS','FAIL')
+                        AND (is_hidden IS NULL OR is_hidden=0)
+                        AND DATE(inspection_time) >= ? AND DATE(inspection_time) <= ?
+                    """, (ms, me))
+                    c = cursor.fetchone()[0]
+                    results.append({'label': f"{y}/{m:02d}", 'target': t,
+                                    'completed': c, 'in_progress': max(0, t - c)})
+
+            return jsonify({'success': True, 'data': results})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
 
 if __name__ == '__main__':
     print("=" * 50)
