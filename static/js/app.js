@@ -2386,16 +2386,6 @@ function t(key) {
                 html += `</table>`;
                 html += `</div>`;
 
-                // 스캔 LOT 추출 위치 설정
-                const scanPos = spec.scan_lot_position || 0;
-                const scanPosLabel = scanPos > 0 ? `${scanPos}번째 단어` : '사용 안 함 (전체 사용)';
-                html += `
-                    <div id="scanLotSection" style="margin-top:14px; padding:10px 12px; background:#1E1E1E; border-radius:6px; border:1px solid #333; display:flex; align-items:center; gap:16px;">
-                        <span style="color:#F07D00; font-weight:600; font-size:0.95em;">📱 스캔 LOT 추출 위치</span>
-                        <span id="scanLotDisplay" data-value="${scanPos}" style="color:#E8E8E8;">${scanPosLabel}</span>
-                    </div>
-                `;
-
                 // 입도분석 상세 정보 (활성화된 경우)
                 if (spec.particle_size_type && spec.particle_size_type !== '비활성') {
                     // particle_size 테이블에서 데이터 가져오기
@@ -2494,13 +2484,6 @@ function t(key) {
                 }
             });
 
-            // 스캔 LOT 추출 위치 편집 가능하게 만들기
-            const scanLotDisplay = document.getElementById('scanLotDisplay');
-            if (scanLotDisplay) {
-                const curVal = scanLotDisplay.dataset.value || '0';
-                scanLotDisplay.innerHTML = `<input type="number" id="scanLotPositionInput" min="0" max="10" value="${curVal}" style="width:60px; padding:4px; border:1px solid #ddd; border-radius:3px; text-align:center;"> <span style="color:#888; font-size:0.85em;">번째 단어 (0=전체)</span>`;
-            }
-
             // 입도분석 항목도 편집 가능하게 만들기
             const particleItems = document.querySelectorAll('.particle-item');
             particleItems.forEach(item => {
@@ -2546,10 +2529,6 @@ function t(key) {
                 if (maxCell) data[`${field}_max`] = maxCell.value || null;
                 if (typeCell) data[`${field}_type`] = typeCell.value;
             });
-
-            // 스캔 LOT 추출 위치
-            const scanLotInput = document.getElementById('scanLotPositionInput');
-            if (scanLotInput) data['scan_lot_position'] = parseInt(scanLotInput.value) || 0;
 
             try {
                 // 1. 분말 사양 저장
