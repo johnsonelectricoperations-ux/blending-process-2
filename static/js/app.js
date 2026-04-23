@@ -2005,10 +2005,21 @@ function t(key) {
                     const res = detail[resField];
                     const displayRes = res === 'PASS' ? '합격' : (res === 'FAIL' ? '불합격' : (res || '-'));
 
+                    const psMin = spec.min_value;
+                    const psMax = spec.max_value;
+                    let psSpecText = null;
+                    if (psMin != null && psMax != null) {
+                        psSpecText = `규격: ${psMin} ~ ${psMax} %`;
+                    } else if (psMin != null) {
+                        psSpecText = `규격: ≥ ${psMin} %`;
+                    } else if (psMax != null) {
+                        psSpecText = `규격: ≤ ${psMax} %`;
+                    }
+
                     html += `
                         <div style="padding:12px;border-radius:8px;background:#1E1E1E;border:1px solid #333;">
                             <div style="font-weight:700;margin-bottom:6px;">${spec.mesh_size}</div>
-                            <div style="font-size:0.95em;color:#444;">규격: ${spec.min_value}~${spec.max_value}%</div>
+                            ${psSpecText ? `<div style="font-size:0.85em;color:#A0A0A0;margin:2px 0 4px;">${psSpecText}</div>` : ''}
                             <div style="margin-top:8px;">평균: <strong>${avg !== null && avg !== undefined ? avg : '-' }%</strong></div>
                             <div>판정: <span class="badge ${res === 'PASS' ? 'pass' : (res === 'FAIL' ? 'fail' : '')}">${displayRes}</span></div>
                         </div>
