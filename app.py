@@ -4533,9 +4533,9 @@ def dashboard_mixing_inspection():
             if period == 'daily':
                 dates = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
                 target_map = fetch_day_map("""
-                    SELECT DATE(end_time) as day, COUNT(*) FROM blending_work
-                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
-                    AND DATE(end_time) >= ? GROUP BY day
+                    SELECT DATE(inspection_time) as day, COUNT(*) FROM inspection_result
+                    WHERE category='mixing' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(inspection_time) >= ? GROUP BY day
                 """, dates[0])
                 done_map = fetch_day_map("""
                     SELECT DATE(inspection_time) as day, COUNT(*) FROM inspection_result
@@ -4555,9 +4555,9 @@ def dashboard_mixing_inspection():
                          for i in range(6, -1, -1)]
                 start = weeks[0][0].isoformat()
                 target_map = fetch_day_map("""
-                    SELECT DATE(end_time), COUNT(*) FROM blending_work
-                    WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
-                    AND DATE(end_time) >= ? GROUP BY DATE(end_time)
+                    SELECT DATE(inspection_time), COUNT(*) FROM inspection_result
+                    WHERE category='mixing' AND (is_hidden IS NULL OR is_hidden=0)
+                    AND DATE(inspection_time) >= ? GROUP BY DATE(inspection_time)
                 """, start)
                 done_map = fetch_day_map("""
                     SELECT DATE(inspection_time), COUNT(*) FROM inspection_result
@@ -4581,9 +4581,9 @@ def dashboard_mixing_inspection():
                     ms = date(y, m, 1).isoformat()
                     me = date(y, m, monthrange(y, m)[1]).isoformat()
                     cursor.execute("""
-                        SELECT COUNT(*) FROM blending_work
-                        WHERE status='completed' AND (is_hidden IS NULL OR is_hidden=0)
-                        AND DATE(end_time) >= ? AND DATE(end_time) <= ?
+                        SELECT COUNT(*) FROM inspection_result
+                        WHERE category='mixing' AND (is_hidden IS NULL OR is_hidden=0)
+                        AND DATE(inspection_time) >= ? AND DATE(inspection_time) <= ?
                     """, (ms, me))
                     t = cursor.fetchone()[0]
                     cursor.execute("""
