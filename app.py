@@ -1690,7 +1690,9 @@ def update_final_result(powder_name, lot_number, conn=None):
 
         # powder_spec에서 활성화된 검사 항목 확인
         cursor.execute('''
-            SELECT flow_rate_type, apparent_density_type, moisture_type, ash_type, particle_size_type, category
+            SELECT flow_rate_type, apparent_density_type, c_content_type, cu_content_type,
+                   moisture_type, ash_type, sinter_change_rate_type, sinter_strength_type,
+                   forming_strength_type, forming_load_type, particle_size_type, category
             FROM powder_spec
             WHERE powder_name = ?
         ''', (powder_name,))
@@ -1718,9 +1720,15 @@ def update_final_result(powder_name, lot_number, conn=None):
         spec_type_result_pairs = [
             (spec_row[0], 'flow_rate_result'),
             (spec_row[1], 'apparent_density_result'),
-            (spec_row[2], 'moisture_result'),
-            (spec_row[3], 'ash_result'),
-            (spec_row[4], 'particle_size_result'),
+            (spec_row[2], 'c_content_result'),
+            (spec_row[3], 'cu_content_result'),
+            (spec_row[4], 'moisture_result'),
+            (spec_row[5], 'ash_result'),
+            (spec_row[6], 'sinter_change_rate_result'),
+            (spec_row[7], 'sinter_strength_result'),
+            (spec_row[8], 'forming_strength_result'),
+            (spec_row[9], 'forming_load_result'),
+            (spec_row[10], 'particle_size_result'),
         ]
 
         required_result_columns = []
