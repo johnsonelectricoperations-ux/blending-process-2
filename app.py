@@ -4610,6 +4610,62 @@ def dashboard_mixing_inspection():
 
 
 
+# ============================================================
+# Bot 연동 설정 API (Google Client ID / Sheets ID 저장)
+# ============================================================
+
+@app.route('/api/bot-settings', methods=['GET'])
+def get_bot_settings():
+    """Bot 연동 Google 설정 조회"""
+    try:
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            ''')
+            cursor.execute("SELECT key, value FROM app_settings WHERE key IN ('bot_google_client_id','bot_sheets_id','bot_sheet_name')")
+            rows = cursor.fetchall()
+            settings = {r[0]: r[1] for r in rows}
+            return jsonify({
+                'success': True,
+                'data': {
+                    'clientId':  settings.get('bot_google_client_id', ''),
+                    'sheetsId':  settings.get('bot_sheets_id', ''),
+                    'sheetName': settings.get('bot_sheet_name', 'MailLog')
+                }
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/bot-settings', methods=['POST'])
+def save_bot_settings():
+    """Bot 연동 Google 설정 저장"""
+    try:
+        data = request.get_json()
+        client_id  = data.get('clientId', '').strip()
+        sheets_id  = data.get('sheetsId', '').strip()
+        sheet_name = data.get('sheetName', 'MailLog').strip()
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            ''')
+            for key, val in [('bot_google_client_id', client_id), ('bot_sheets_id', sheets_id), ('bot_sheet_name', sheet_name)]:
+                cursor.execute('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', (key, val))
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
 if __name__ == '__main__':
     print("=" * 50)
     print("분말 검사 시스템 서버 시작")

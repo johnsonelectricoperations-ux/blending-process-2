@@ -43,9 +43,11 @@ function setMenuByRole() {
     const tabPerms = document.getElementById('adminTabPermissions');
     const tabUserMgmt = document.getElementById('adminTabUserMgmt');
     const tabScanRules = document.getElementById('adminTabScanRules');
+    const tabBotSettings = document.getElementById('adminTabBotSettings');
     if (tabPerms) tabPerms.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
     if (tabUserMgmt) tabUserMgmt.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
     if (tabScanRules) tabScanRules.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
+    if (tabBotSettings) tabBotSettings.style.display = currentIsProgramAdmin ? 'inline-flex' : 'none';
 }
 
 // ============================================
@@ -410,6 +412,7 @@ function t(key) {
             document.getElementById(`${tabName}-tab`).classList.add('active');
 
             if (tabName === 'scan-rules') loadScanRulesTab();
+            if (tabName === 'bot-settings') loadBotSettingsForm();
         }
 
         async function loadScanRulesTab() {
@@ -7439,3 +7442,468 @@ function t(key) {
                 }
             }
         }, true);
+
+// ============================================================
+// Bot DB 불러오기 기능 (Google Sheets 연동)
+// ============================================================
+
+// Google API 설정 — /api/bot-settings 에서 동적으로 로드됨
+let BOT_GOOGLE_CLIENT_ID = '';
+let BOT_SHEETS_ID        = '';
+let BOT_SHEET_NAME       = 'MailLog';
+
+// 서버에서 Bot 설정 로드
+async function loadBotSettings() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/bot-settings`);
+        const data = await resp.json();
+        if (data.success) {
+            BOT_GOOGLE_CLIENT_ID = data.data.clientId  || '';
+            BOT_SHEETS_ID        = data.data.sheetsId  || '';
+            BOT_SHEET_NAME       = data.data.sheetName || 'MailLog';
+        }
+    } catch (e) { /* 무시 */ }
+}
+
+// 관리자 Bot 설정 폼에 현재 값 로드
+async function loadBotSettingsForm() {
+    await loadBotSettings();
+    const ci = document.getElementById('botSettingsClientId');
+    const si = document.getElementById('botSettingsSheetsId');
+    const sn = document.getElementById('botSettingsSheetName');
+    if (ci) ci.value = BOT_GOOGLE_CLIENT_ID;
+    if (si) si.value = BOT_SHEETS_ID;
+    if (sn) sn.value = BOT_SHEET_NAME;
+}
+
+// Bot 설정 저장
+async function saveBotSettings() {
+    const clientId  = document.getElementById('botSettingsClientId').value.trim();
+    const sheetsId  = document.getElementById('botSettingsSheetsId').value.trim();
+    const sheetName = document.getElementById('botSettingsSheetName').value.trim() || 'MailLog';
+    try {
+        const resp = await fetch(`${API_BASE}/api/bot-settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, sheetsId, sheetName })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            BOT_GOOGLE_CLIENT_ID = clientId;
+            BOT_SHEETS_ID        = sheetsId;
+            BOT_SHEET_NAME       = sheetName;
+            const status = document.getElementById('botSettingsSaveStatus');
+            status.style.display = 'inline';
+            setTimeout(() => { status.style.display = 'none'; }, 3000);
+        } else {
+            alert('저장 실패: ' + data.message);
+        }
+    } catch (e) {
+        alert('저장 오류: ' + e.message);
+    }
+}
+
+let botGapiReady    = false;
+let botPdfDoc       = null;
+let botPdfFile      = null;
+let botSelectedPages = [];
+let botCurrentMailRow = null; // 현재 등록 중인 Sheets 행 인덱스
+
+// 수입검사 탭 전환
+function showIncomingTab(tab) {
+    document.querySelectorAll('#incoming .admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#incoming .admin-tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById(`incomingTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+    document.getElementById(`incomingTab${tab.charAt(0).toUpperCase() + tab.slice(1)}Content`).classList.add('active');
+    if (tab === 'bot') initBotTab();
+}
+
+// Bot 탭 진입 시 초기화
+async function initBotTab() {
+    await loadBotSettings();
+    if (!BOT_GOOGLE_CLIENT_ID || !BOT_SHEETS_ID) {
+        document.getElementById('botMailList').innerHTML =
+            '<div class="empty-message" style="color:#EF9A9A;">Google 연동 설정이 완료되지 않았습니다.<br>관리자 설정에서 Client ID와 Sheets ID를 입력하세요.</div>';
+        return;
+    }
+    loadGapiIfNeeded();
+}
+
+// Google GAPI 동적 로드
+function loadGapiIfNeeded() {
+    if (botGapiReady) return;
+    if (document.getElementById('gapiScript')) return;
+    const s = document.createElement('script');
+    s.id  = 'gapiScript';
+    s.src = 'https://apis.google.com/js/api.js';
+    s.onload = () => {
+        gapi.load('client:auth2', async () => {
+            await gapi.client.init({
+                clientId: BOT_GOOGLE_CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly',
+                discoveryDocs: [
+                    'https://sheets.googleapis.com/$discovery/rest?version=v4',
+                    'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'
+                ]
+            });
+            botGapiReady = true;
+            checkBotAuthState();
+        });
+    };
+    document.head.appendChild(s);
+}
+
+function checkBotAuthState() {
+    const authSection = document.getElementById('botGoogleAuthSection');
+    const isSignedIn  = gapi.auth2.getAuthInstance().isSignedIn.get();
+    if (isSignedIn) {
+        authSection.style.display = 'none';
+    } else {
+        authSection.style.display = 'block';
+    }
+}
+
+function botGoogleSignIn() {
+    gapi.auth2.getAuthInstance().signIn().then(() => {
+        document.getElementById('botGoogleAuthSection').style.display = 'none';
+        loadBotMailList();
+    });
+}
+
+// Google Sheets에서 미등록 메일 목록 불러오기
+async function loadBotMailList() {
+    if (!botGapiReady) {
+        loadGapiIfNeeded();
+        document.getElementById('botMailList').innerHTML =
+            '<div class="empty-message">Google API 초기화 중입니다. 잠시 후 다시 눌러주세요.</div>';
+        return;
+    }
+    if (!gapi.auth2.getAuthInstance().isSignedIn.get()) {
+        document.getElementById('botGoogleAuthSection').style.display = 'block';
+        return;
+    }
+
+    document.getElementById('botMailList').innerHTML =
+        '<div class="empty-message">불러오는 중...</div>';
+
+    try {
+        const resp = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId: BOT_SHEETS_ID,
+            range: `${BOT_SHEET_NAME}!A2:H`
+        });
+
+        const rows = resp.result.values || [];
+        // 컬럼: A=rowIndex, B=메일ID, C=업체명, D=수신일시, E=제목, F=파일명, G=DriveFileId, H=등록여부
+        const pending = rows
+            .map((r, i) => ({ sheetRow: i + 2, mailId: r[1], company: r[2], receivedAt: r[3], subject: r[4], fileName: r[5], driveFileId: r[6], status: r[7] }))
+            .filter(r => r.status !== '등록완료');
+
+        renderBotMailList(pending);
+        const now = new Date().toLocaleString('ko-KR');
+        document.getElementById('botLastSync').textContent = `마지막 동기화: ${now}`;
+    } catch (e) {
+        document.getElementById('botMailList').innerHTML =
+            `<div class="empty-message" style="color:#EF9A9A;">불러오기 실패: ${e.message || JSON.stringify(e)}</div>`;
+    }
+}
+
+function renderBotMailList(rows) {
+    const container = document.getElementById('botMailList');
+    if (rows.length === 0) {
+        container.innerHTML = '<div class="empty-message">미등록 메일이 없습니다.</div>';
+        return;
+    }
+
+    let html = `<table style="width:100%; border-collapse:collapse; font-size:0.93em;">
+        <thead><tr style="background:#2A2A2A; color:#A0A0A0;">
+            <th style="padding:10px 12px; text-align:left;">업체</th>
+            <th style="padding:10px 12px; text-align:left;">수신일시</th>
+            <th style="padding:10px 12px; text-align:left;">파일명</th>
+            <th style="padding:10px 12px; text-align:center;">상태</th>
+            <th style="padding:10px 12px; text-align:center;">액션</th>
+        </tr></thead><tbody>`;
+
+    rows.forEach(row => {
+        const statusBadge = row.status === '일부등록'
+            ? '<span class="badge" style="background:#F07D00;">일부등록</span>'
+            : '<span class="badge" style="background:#555;">미등록</span>';
+        html += `<tr style="border-bottom:1px solid #2A2A2A;">
+            <td style="padding:10px 12px;">${row.company || '-'}</td>
+            <td style="padding:10px 12px; color:#A0A0A0; font-size:0.9em;">${row.receivedAt || '-'}</td>
+            <td style="padding:10px 12px; color:#A0A0A0; font-size:0.88em; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${row.fileName || ''}">${row.fileName || '-'}</td>
+            <td style="padding:10px 12px; text-align:center;">${statusBadge}</td>
+            <td style="padding:10px 12px; text-align:center;">
+                <button class="btn secondary" style="padding:5px 14px; font-size:0.85em;"
+                    onclick="openBotRegisterModal(${JSON.stringify(row).replace(/"/g, '&quot;')})">열기</button>
+            </td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// Bot LOT 등록 모달 열기
+async function openBotRegisterModal(row) {
+    botCurrentMailRow = row;
+    botSelectedPages  = [];
+    botPdfDoc         = null;
+    botPdfFile        = null;
+
+    document.getElementById('botModalTitle').textContent   = `LOT 등록 — ${row.company}`;
+    document.getElementById('botModalSubtitle').textContent = `수신: ${row.receivedAt}  |  파일: ${row.fileName}`;
+    document.getElementById('botPdfThumbnails').innerHTML  = '<span style="color:#A0A0A0;font-size:0.85em;">PDF 로딩 중...</span>';
+    document.getElementById('botPdfStatus').textContent    = '선택된 페이지 없음';
+    document.getElementById('botLotNumber').value          = '';
+    document.getElementById('botInspectionDate').value     = row.receivedAt ? row.receivedAt.split(' ')[0].split('/').reverse().join('-') : new Date().toISOString().split('T')[0];
+
+    // 분말명 / 검사자 목록 채우기
+    await Promise.all([loadBotPowderList(), loadBotInspectorList()]);
+
+    document.getElementById('botRegisterModal').style.display = 'flex';
+
+    // Google Drive에서 PDF 다운로드
+    await loadBotPdf(row.driveFileId, row.fileName);
+}
+
+async function loadBotPowderList() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/powder-list?category=incoming`);
+        const data = await resp.json();
+        const sel  = document.getElementById('botPowderName');
+        sel.innerHTML = '<option value="">선택하세요</option>';
+        if (data.success) {
+            data.data.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = opt.textContent = p;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { /* 무시 */ }
+}
+
+async function loadBotInspectorList() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/inspector-list`);
+        const data = await resp.json();
+        const sel  = document.getElementById('botInspector');
+        sel.innerHTML = '<option value="">선택하세요</option>';
+        if (data.success) {
+            data.data.forEach(ins => {
+                const opt = document.createElement('option');
+                opt.value = opt.textContent = ins;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { /* 무시 */ }
+}
+
+// Google Drive에서 PDF blob 다운로드 후 렌더링
+async function loadBotPdf(driveFileId, fileName) {
+    try {
+        const tokenObj = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse();
+        const token    = tokenObj.access_token;
+        const dlResp   = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!dlResp.ok) throw new Error(`Drive 다운로드 실패: ${dlResp.status}`);
+        const blob      = await dlResp.blob();
+        botPdfFile      = new File([blob], fileName, { type: 'application/pdf' });
+        const arrayBuf  = await blob.arrayBuffer();
+        botPdfDoc       = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+        await renderBotPdfThumbnails();
+    } catch (e) {
+        document.getElementById('botPdfThumbnails').innerHTML =
+            `<span style="color:#EF9A9A;font-size:0.85em;">PDF 로드 실패: ${e.message}</span>`;
+    }
+}
+
+// Bot 모달용 PDF 썸네일 렌더링 (기존 Millsheet 로직과 동일한 방식)
+async function renderBotPdfThumbnails() {
+    const container = document.getElementById('botPdfThumbnails');
+    container.innerHTML = '';
+    const numPages = botPdfDoc.numPages;
+
+    for (let i = 1; i <= numPages; i++) {
+        const page = await botPdfDoc.getPage(i);
+        const vp   = page.getViewport({ scale: 0.25 });
+        const canvas = document.createElement('canvas');
+        canvas.width  = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = `botThumb_${i}`;
+        wrapper.dataset.page = i;
+        wrapper.style.cssText = 'cursor:pointer;border:3px solid #444;border-radius:6px;padding:4px;text-align:center;background:#222;position:relative;';
+
+        const lbl = document.createElement('div');
+        lbl.textContent = `${i}페이지`;
+        lbl.style.cssText = 'font-size:0.72em;color:#888;margin-top:3px;';
+
+        const badge = document.createElement('div');
+        badge.id = `botBadge_${i}`;
+        badge.style.cssText = 'display:none;position:absolute;top:4px;right:4px;background:#1976D2;color:#fff;font-size:0.7em;font-weight:700;padding:2px 6px;border-radius:4px;';
+        badge.textContent = '✓ 선택';
+
+        wrapper.appendChild(badge);
+        wrapper.appendChild(canvas);
+        wrapper.appendChild(lbl);
+        wrapper.onclick = () => openBotPagePreview(i);
+        container.appendChild(wrapper);
+    }
+    updateBotPdfStatus();
+}
+
+// Bot 모달에서 페이지 클릭 시 기존 Millsheet 미리보기 모달 재활용
+async function openBotPagePreview(pageNum) {
+    // 기존 millsheetPdfDoc을 일시적으로 botPdfDoc으로 교체
+    const _origDoc  = millsheetPdfDoc;
+    const _origFile = millsheetFile;
+    const _origSel  = millsheetSelectedPages;
+    millsheetPdfDoc      = botPdfDoc;
+    millsheetFile        = botPdfFile;
+    millsheetSelectedPages = botSelectedPages;
+
+    await openMillsheetPreview(pageNum);
+
+    // 기존 선택 버튼 동작을 Bot 전용으로 오버라이드
+    const origToggle = window.toggleMillsheetPageFromModal;
+    window.toggleMillsheetPageFromModal = function() {
+        const pn  = millsheetPreviewCurrentPage;
+        const idx = botSelectedPages.indexOf(pn);
+        const thumb = document.getElementById(`botThumb_${pn}`);
+        const badge = document.getElementById(`botBadge_${pn}`);
+        if (idx === -1) {
+            botSelectedPages.push(pn);
+            millsheetSelectedPages = botSelectedPages;
+            if (thumb) { thumb.style.borderColor = '#1976D2'; thumb.style.background = 'rgba(25,118,210,0.15)'; }
+            if (badge) badge.style.display = 'block';
+        } else {
+            botSelectedPages.splice(idx, 1);
+            millsheetSelectedPages = botSelectedPages;
+            if (thumb) { thumb.style.borderColor = '#444'; thumb.style.background = '#222'; }
+            if (badge) badge.style.display = 'none';
+        }
+        updatePreviewSelectButton(pn);
+        updateBotPdfStatus();
+    };
+
+    // 모달 닫힐 때 원상복구
+    const origClose = window.closeMillsheetPreview;
+    window.closeMillsheetPreview = function() {
+        millsheetPdfDoc      = _origDoc;
+        millsheetFile        = _origFile;
+        millsheetSelectedPages = _origSel;
+        window.toggleMillsheetPageFromModal = origToggle;
+        window.closeMillsheetPreview        = origClose;
+        document.getElementById('millsheetPreviewModal').style.display = 'none';
+    };
+}
+
+function updateBotPdfStatus() {
+    const el = document.getElementById('botPdfStatus');
+    if (!el) return;
+    if (botSelectedPages.length === 0) {
+        el.textContent = '선택된 페이지 없음';
+        el.style.color = '#A0A0A0';
+    } else {
+        const sorted = [...botSelectedPages].sort((a, b) => a - b);
+        el.textContent = `선택된 페이지: ${sorted.join(', ')}페이지`;
+        el.style.color = '#4FC3F7';
+    }
+}
+
+// Bot LOT 등록 실행
+async function submitBotLot() {
+    const powderName     = document.getElementById('botPowderName').value;
+    const lotNumber      = document.getElementById('botLotNumber').value.trim();
+    const inspectionDate = document.getElementById('botInspectionDate').value;
+    const inspectionType = document.getElementById('botInspectionType').value;
+    const inspector      = document.getElementById('botInspector').value;
+
+    if (!powderName)     return alert('분말명을 선택하세요.');
+    if (!lotNumber)      return alert('LOT 번호를 입력하세요.');
+    if (!inspectionDate) return alert('검사일을 입력하세요.');
+    if (!inspector)      return alert('검사자를 선택하세요.');
+    if (botSelectedPages.length === 0) return alert('저장할 Millsheet 페이지를 선택하세요.');
+
+    // Millsheet 업로드 (선택된 페이지만)
+    const origDoc   = millsheetPdfDoc;
+    const origFile  = millsheetFile;
+    const origPages = millsheetSelectedPages;
+    millsheetPdfDoc        = botPdfDoc;
+    millsheetFile          = botPdfFile;
+    millsheetSelectedPages = botSelectedPages;
+
+    try {
+        let uploadResult = await doMillsheetUpload(powderName, lotNumber, false);
+        if (!uploadResult.success && uploadResult.exists) {
+            if (!confirm('기존 Millsheet 파일이 있습니다. 교체하시겠습니까?')) {
+                millsheetPdfDoc = origDoc; millsheetFile = origFile; millsheetSelectedPages = origPages;
+                return;
+            }
+            uploadResult = await doMillsheetUpload(powderName, lotNumber, true);
+        }
+        if (!uploadResult.success) {
+            alert('Millsheet 업로드 실패: ' + uploadResult.message);
+            millsheetPdfDoc = origDoc; millsheetFile = origFile; millsheetSelectedPages = origPages;
+            return;
+        }
+    } catch (err) {
+        alert('Millsheet 업로드 오류: ' + err.message);
+        millsheetPdfDoc = origDoc; millsheetFile = origFile; millsheetSelectedPages = origPages;
+        return;
+    }
+
+    millsheetPdfDoc = origDoc; millsheetFile = origFile; millsheetSelectedPages = origPages;
+
+    // 검사 시작
+    await startInspection(powderName, lotNumber, inspectionType, inspector, 'incoming', inspectionDate);
+
+    // Google Sheets 상태를 '일부등록'으로 업데이트
+    await updateBotSheetStatus(botCurrentMailRow.sheetRow, '일부등록');
+
+    // 추가 LOT 여부 확인
+    const more = confirm('LOT 등록이 완료되었습니다.\n\n이 PDF에 등록할 LOT가 더 있습니까?');
+    if (more) {
+        // 폼 초기화, PDF 유지
+        document.getElementById('botPowderName').value = '';
+        document.getElementById('botLotNumber').value  = '';
+        botSelectedPages = [];
+        document.querySelectorAll('[id^="botThumb_"]').forEach(el => {
+            el.style.borderColor  = '#444';
+            el.style.background   = '#222';
+        });
+        document.querySelectorAll('[id^="botBadge_"]').forEach(el => el.style.display = 'none');
+        updateBotPdfStatus();
+    } else {
+        // 최종 완료 — Sheets 등록완료 업데이트 후 모달 닫기
+        await updateBotSheetStatus(botCurrentMailRow.sheetRow, '등록완료');
+        closeBotRegisterModal();
+        loadBotMailList();
+    }
+}
+
+// Google Sheets 행 상태 업데이트
+async function updateBotSheetStatus(rowNum, status) {
+    try {
+        await gapi.client.sheets.spreadsheets.values.update({
+            spreadsheetId: BOT_SHEETS_ID,
+            range: `${BOT_SHEET_NAME}!H${rowNum}`,
+            valueInputOption: 'RAW',
+            resource: { values: [[status]] }
+        });
+    } catch (e) {
+        console.warn('Sheets 상태 업데이트 실패:', e);
+    }
+}
+
+function closeBotRegisterModal() {
+    document.getElementById('botRegisterModal').style.display = 'none';
+    botPdfDoc        = null;
+    botPdfFile       = null;
+    botSelectedPages = [];
+    botCurrentMailRow = null;
+}
