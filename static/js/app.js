@@ -7447,9 +7447,10 @@ function t(key) {
 // Bot DB 불러오기 기능 (Google Sheets 공개 CSV 방식 — 로그인 불필요)
 // ============================================================
 
-// Google Sheets 설정 — /api/bot-settings 에서 동적으로 로드됨
-let BOT_SHEETS_ID  = '';
-let BOT_SHEET_NAME = 'MailLog';
+// Google Sheets / Drive 설정 — /api/bot-settings 에서 동적으로 로드됨
+let BOT_SHEETS_ID    = '';
+let BOT_SHEET_NAME   = 'MailLog';
+let BOT_DRIVE_API_KEY = '';
 
 // 서버에서 Bot 설정 로드
 async function loadBotSettings() {
@@ -7457,8 +7458,9 @@ async function loadBotSettings() {
         const resp = await fetch(`${API_BASE}/api/bot-settings`);
         const data = await resp.json();
         if (data.success) {
-            BOT_SHEETS_ID  = data.data.sheetsId  || '';
-            BOT_SHEET_NAME = data.data.sheetName || 'MailLog';
+            BOT_SHEETS_ID     = data.data.sheetsId  || '';
+            BOT_SHEET_NAME    = data.data.sheetName || 'MailLog';
+            BOT_DRIVE_API_KEY = data.data.apiKey    || '';
         }
     } catch (e) { /* 무시 */ }
 }
@@ -7468,24 +7470,28 @@ async function loadBotSettingsForm() {
     await loadBotSettings();
     const si = document.getElementById('botSettingsSheetsId');
     const sn = document.getElementById('botSettingsSheetName');
+    const ak = document.getElementById('botSettingsApiKey');
     if (si) si.value = BOT_SHEETS_ID;
     if (sn) sn.value = BOT_SHEET_NAME;
+    if (ak) ak.value = BOT_DRIVE_API_KEY;
 }
 
 // Bot 설정 저장
 async function saveBotSettings() {
     const sheetsId  = document.getElementById('botSettingsSheetsId').value.trim();
     const sheetName = document.getElementById('botSettingsSheetName').value.trim() || 'MailLog';
+    const apiKey    = document.getElementById('botSettingsApiKey').value.trim();
     try {
         const resp = await fetch(`${API_BASE}/api/bot-settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sheetsId, sheetName })
+            body: JSON.stringify({ sheetsId, sheetName, apiKey })
         });
         const data = await resp.json();
         if (data.success) {
-            BOT_SHEETS_ID  = sheetsId;
-            BOT_SHEET_NAME = sheetName;
+            BOT_SHEETS_ID     = sheetsId;
+            BOT_SHEET_NAME    = sheetName;
+            BOT_DRIVE_API_KEY = apiKey;
             const status = document.getElementById('botSettingsSaveStatus');
             status.style.display = 'inline';
             setTimeout(() => { status.style.display = 'none'; }, 3000);
@@ -7674,12 +7680,13 @@ async function loadBotInspectorList() {
     } catch (e) { /* 무시 */ }
 }
 
-// Google Drive 공개 링크로 PDF 다운로드 후 렌더링 (로그인 불필요)
+// Google Drive API Key로 PDF 다운로드 (CORS 없이 공개 파일 접근)
 async function loadBotPdf(driveFileId, fileName) {
     try {
-        const dlUrl  = `https://drive.google.com/uc?export=download&id=${driveFileId}`;
+        if (!BOT_DRIVE_API_KEY) throw new Error('Drive API Key가 설정되지 않았습니다. 관리자 설정을 확인하세요.');
+        const dlUrl  = `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&key=${BOT_DRIVE_API_KEY}`;
         const dlResp = await fetch(dlUrl);
-        if (!dlResp.ok) throw new Error(`Drive 다운로드 실패: ${dlResp.status}`);
+        if (!dlResp.ok) throw new Error(`Drive 다운로드 실패 (${dlResp.status}): ${await dlResp.text()}`);
         const blob     = await dlResp.blob();
         botPdfFile     = new File([blob], fileName, { type: 'application/pdf' });
         const arrayBuf = await blob.arrayBuffer();

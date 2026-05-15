@@ -1231,6 +1231,11 @@
                             <label>시트 이름</label>
                             <input type="text" id="botSettingsSheetName" placeholder="MailLog" value="MailLog">
                         </div>
+                        <div class="form-group">
+                            <label>Google Drive API Key</label>
+                            <input type="text" id="botSettingsApiKey" placeholder="AIzaSy...">
+                            <div style="font-size:0.8em; color:#888; margin-top:4px;">Google Cloud Console → API 키 발급 (Drive API 제한)</div>
+                        </div>
                         <div>
                             <button class="btn" onclick="saveBotSettings()" style="padding:10px 28px;">저장</button>
                             <span id="botSettingsSaveStatus" style="margin-left:12px; font-size:0.88em; color:#4CAF50; display:none;">✓ 저장되었습니다.</span>

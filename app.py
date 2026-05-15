@@ -4664,7 +4664,7 @@ def bot_save_drive_file_id():
 
 
 # ============================================================
-# Bot 연동 설정 API (Google Client ID / Sheets ID 저장)
+# Bot 연동 설정 API (Sheets ID / API Key 저장)
 # ============================================================
 
 @app.route('/api/bot-settings', methods=['GET'])
@@ -4679,15 +4679,15 @@ def get_bot_settings():
                     value TEXT NOT NULL
                 )
             ''')
-            cursor.execute("SELECT key, value FROM app_settings WHERE key IN ('bot_google_client_id','bot_sheets_id','bot_sheet_name')")
-            rows = cursor.fetchall()
+            cursor.execute("SELECT key, value FROM app_settings WHERE key IN ('bot_sheets_id','bot_sheet_name','bot_drive_api_key')")
+            rows     = cursor.fetchall()
             settings = {r[0]: r[1] for r in rows}
             return jsonify({
                 'success': True,
                 'data': {
-                    'clientId':  settings.get('bot_google_client_id', ''),
                     'sheetsId':  settings.get('bot_sheets_id', ''),
-                    'sheetName': settings.get('bot_sheet_name', 'MailLog')
+                    'sheetName': settings.get('bot_sheet_name', 'MailLog'),
+                    'apiKey':    settings.get('bot_drive_api_key', '')
                 }
             })
     except Exception as e:
@@ -4698,10 +4698,10 @@ def get_bot_settings():
 def save_bot_settings():
     """Bot 연동 Google 설정 저장"""
     try:
-        data = request.get_json()
-        client_id  = data.get('clientId', '').strip()
+        data       = request.get_json()
         sheets_id  = data.get('sheetsId', '').strip()
         sheet_name = data.get('sheetName', 'MailLog').strip()
+        api_key    = data.get('apiKey', '').strip()
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()
@@ -4711,7 +4711,7 @@ def save_bot_settings():
                     value TEXT NOT NULL
                 )
             ''')
-            for key, val in [('bot_google_client_id', client_id), ('bot_sheets_id', sheets_id), ('bot_sheet_name', sheet_name)]:
+            for key, val in [('bot_sheets_id', sheets_id), ('bot_sheet_name', sheet_name), ('bot_drive_api_key', api_key)]:
                 cursor.execute('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', (key, val))
             conn.commit()
         return jsonify({'success': True})
