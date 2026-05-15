@@ -3425,7 +3425,22 @@ def trace_by_batch_lot(batch_lot):
                 ORDER BY id
             ''', (work['id'],))
 
-            material_inputs = [dict_from_row(row) for row in cursor.fetchall()]
+            raw_inputs = [dict_from_row(row) for row in cursor.fetchall()]
+
+            # 같은 분말+같은 LOT가 분할 투입된 경우 중량 합산하여 1건으로 그룹핑
+            grouped = {}
+            for m in raw_inputs:
+                key = (m['powder_name'], m['material_lot'])
+                if key not in grouped:
+                    grouped[key] = dict(m)
+                else:
+                    grouped[key]['actual_weight'] = round(
+                        float(grouped[key]['actual_weight']) + float(m['actual_weight']), 3
+                    )
+                    grouped[key]['target_weight'] = round(
+                        float(grouped[key]['target_weight']) + float(m['target_weight']), 3
+                    )
+            material_inputs = list(grouped.values())
 
             # 3. 각 원재료의 수입검사 결과 조회 (제품명과 lot번호로 조회)
             for material in material_inputs:
@@ -3494,9 +3509,10 @@ def trace_by_material_lot(material_lot):
             actual_powder_name = inspection['powder_name']
 
             # 2. 이 LOT과 분말명이 사용된 모든 배합 작업 조회
+            # 같은 LOT가 분할 투입된 경우 GROUP BY로 중복 배합 제거, 실투입량 합산
             cursor.execute('''
                 SELECT
-                    mi.*,
+                    bw.id,
                     bw.work_order,
                     bw.product_name,
                     bw.batch_lot,
@@ -3505,10 +3521,13 @@ def trace_by_material_lot(material_lot):
                     bw.operator,
                     bw.status,
                     bw.start_time,
-                    bw.end_time
+                    bw.end_time,
+                    SUM(mi.actual_weight) as actual_weight,
+                    SUM(mi.target_weight) as target_weight
                 FROM material_input mi
                 JOIN blending_work bw ON mi.blending_work_id = bw.id
                 WHERE mi.material_lot = ? AND mi.powder_name = ?
+                GROUP BY bw.id
                 ORDER BY bw.start_time DESC
             ''', (material_lot, actual_powder_name))
 
