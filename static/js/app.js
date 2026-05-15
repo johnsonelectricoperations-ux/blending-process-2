@@ -6235,14 +6235,21 @@ function t(key) {
             // 진행 상황 업데이트
             document.getElementById('autoInputProgress').textContent = `0/${materials.length}`;
 
-            // HTML 생성
-            let html = '';
+            // HTML 생성 - 단계 도트 + 각 분말 카드 (순서대로 하나씩만 표시)
+            let dotsHtml = `<div id="stepDotsContainer" style="display:flex; gap:10px; align-items:center; margin-bottom:20px; padding:12px 16px; background:#1A1A2E; border-radius:8px; border:1px solid #333; flex-wrap:wrap;">`;
+            materials.forEach((m, i) => {
+                dotsHtml += `<span id="stepDot_${i}" title="${m.powderName}" style="width:14px; height:14px; border-radius:50%; background:#444; display:inline-block; transition:background 0.3s;"></span>`;
+            });
+            dotsHtml += `<span style="margin-left:8px; color:#A0A0A0; font-size:0.9em;" id="stepLabel">준비중...</span>`;
+            dotsHtml += `</div>`;
+
+            let html = dotsHtml;
             materials.forEach((material, idx) => {
-                const rowClass = idx === 0 ? 'material-input-row active' : 'material-input-row';
-                const statusBadge = idx === 0 ? '<span class="status-badge active">진행중</span>' : '<span class="status-badge waiting">대기</span>';
+                const statusBadge = '<span class="status-badge waiting">대기</span>';
 
                 html += `
-                    <div class="${rowClass}" id="materialRow_${idx}" data-index="${idx}"
+                    <div class="material-input-row" id="materialRow_${idx}" data-index="${idx}"
+                         style="display:none;"
                          data-min-weight="${material.minWeight}"
                          data-max-weight="${material.maxWeight}"
                          data-calculated-weight="${material.calculatedWeight}"
@@ -6265,13 +6272,9 @@ function t(key) {
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center;">
                                 <button type="button" class="btn secondary" onclick="addLotRow(${idx})"
-                                        id="addLotBtn_${idx}" ${idx !== 0 ? 'disabled' : ''}
+                                        id="addLotBtn_${idx}" disabled
                                         style="padding: 8px 16px; font-size: 0.9em;">
                                     ➕ LOT 추가
-                                </button>
-                                <button type="button" class="btn" onclick="activateMaterialRow(${idx})"
-                                        id="activateBtn_${idx}" style="${idx === 0 ? 'display:none;' : ''}">
-                                    작업 시작
                                 </button>
                             </div>
                         </div>
@@ -6413,8 +6416,7 @@ function t(key) {
                     document.getElementById(`addLotBtn_${idx}`).disabled = true;
                     document.getElementById(`judgeBtn_${idx}`).disabled = true;
                     document.getElementById(`completeMaterialBtn_${idx}`).disabled = true;
-                    const activateBtn = document.getElementById(`activateBtn_${idx}`);
-                    if (activateBtn) activateBtn.style.display = 'none';
+
                 } else {
                     // 미완료 분말: 첫 번째 미완료 분말 기록
                     if (firstIncompleteIndex === -1) {
@@ -7236,33 +7238,47 @@ function t(key) {
             }
         }
 
-        // 원재료 행 활성화
+        // 원재료 행 활성화 (순서대로 하나씩 표시)
         function activateMaterialRow(index) {
-            // 모든 행 비활성화
+            // 모든 행 숨기기
             document.querySelectorAll('.material-input-row').forEach(row => {
+                row.style.display = 'none';
                 row.classList.remove('active');
-                const badge = row.querySelector('.status-badge');
-                if (badge && badge.textContent !== '완료') {
-                    badge.className = 'status-badge waiting';
-                    badge.textContent = '대기';
-                }
             });
 
-            // 해당 행 활성화
+            // 해당 행만 표시 및 활성화
+            const totalRows = document.querySelectorAll('.material-input-row').length;
             const targetRow = document.getElementById(`materialRow_${index}`);
+            if (!targetRow) return;
+            targetRow.style.display = 'block';
             targetRow.classList.add('active');
             targetRow.querySelector('.status-badge').className = 'status-badge active';
             targetRow.querySelector('.status-badge').textContent = '진행중';
 
-            // 버튼 활성화
+            // LOT 추가 버튼 활성화
             document.getElementById(`addLotBtn_${index}`).disabled = false;
-            document.getElementById(`activateBtn_${index}`).style.display = 'none';
 
             // 첫 LOT 행 추가
             const tableBody = document.getElementById(`lotTableBody_${index}`);
             if (tableBody.children.length === 0) {
                 addLotRow(index);
             }
+
+            // 단계 도트 업데이트
+            document.querySelectorAll('[id^="stepDot_"]').forEach((dot, i) => {
+                if (i < index) {
+                    dot.style.background = '#4CAF50'; // 완료 (초록)
+                } else if (i === index) {
+                    dot.style.background = '#F07D00'; // 진행중 (주황)
+                } else {
+                    dot.style.background = '#444'; // 대기 (회색)
+                }
+            });
+            const stepLabel = document.getElementById('stepLabel');
+            if (stepLabel) stepLabel.textContent = `${index + 1} / ${totalRows} 단계`;
+
+            // 진행 상황 업데이트
+            document.getElementById('autoInputProgress').textContent = `${index}/${totalRows}`;
         }
 
         // 초기 로드
