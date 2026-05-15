@@ -7444,13 +7444,12 @@ function t(key) {
         }, true);
 
 // ============================================================
-// Bot DB 불러오기 기능 (Google Sheets 연동)
+// Bot DB 불러오기 기능 (Google Sheets 공개 CSV 방식 — 로그인 불필요)
 // ============================================================
 
-// Google API 설정 — /api/bot-settings 에서 동적으로 로드됨
-let BOT_GOOGLE_CLIENT_ID = '';
-let BOT_SHEETS_ID        = '';
-let BOT_SHEET_NAME       = 'MailLog';
+// Google Sheets 설정 — /api/bot-settings 에서 동적으로 로드됨
+let BOT_SHEETS_ID  = '';
+let BOT_SHEET_NAME = 'MailLog';
 
 // 서버에서 Bot 설정 로드
 async function loadBotSettings() {
@@ -7458,9 +7457,8 @@ async function loadBotSettings() {
         const resp = await fetch(`${API_BASE}/api/bot-settings`);
         const data = await resp.json();
         if (data.success) {
-            BOT_GOOGLE_CLIENT_ID = data.data.clientId  || '';
-            BOT_SHEETS_ID        = data.data.sheetsId  || '';
-            BOT_SHEET_NAME       = data.data.sheetName || 'MailLog';
+            BOT_SHEETS_ID  = data.data.sheetsId  || '';
+            BOT_SHEET_NAME = data.data.sheetName || 'MailLog';
         }
     } catch (e) { /* 무시 */ }
 }
@@ -7468,30 +7466,26 @@ async function loadBotSettings() {
 // 관리자 Bot 설정 폼에 현재 값 로드
 async function loadBotSettingsForm() {
     await loadBotSettings();
-    const ci = document.getElementById('botSettingsClientId');
     const si = document.getElementById('botSettingsSheetsId');
     const sn = document.getElementById('botSettingsSheetName');
-    if (ci) ci.value = BOT_GOOGLE_CLIENT_ID;
     if (si) si.value = BOT_SHEETS_ID;
     if (sn) sn.value = BOT_SHEET_NAME;
 }
 
 // Bot 설정 저장
 async function saveBotSettings() {
-    const clientId  = document.getElementById('botSettingsClientId').value.trim();
     const sheetsId  = document.getElementById('botSettingsSheetsId').value.trim();
     const sheetName = document.getElementById('botSettingsSheetName').value.trim() || 'MailLog';
     try {
         const resp = await fetch(`${API_BASE}/api/bot-settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId, sheetsId, sheetName })
+            body: JSON.stringify({ sheetsId, sheetName })
         });
         const data = await resp.json();
         if (data.success) {
-            BOT_GOOGLE_CLIENT_ID = clientId;
-            BOT_SHEETS_ID        = sheetsId;
-            BOT_SHEET_NAME       = sheetName;
+            BOT_SHEETS_ID  = sheetsId;
+            BOT_SHEET_NAME = sheetName;
             const status = document.getElementById('botSettingsSaveStatus');
             status.style.display = 'inline';
             setTimeout(() => { status.style.display = 'none'; }, 3000);
@@ -7503,11 +7497,10 @@ async function saveBotSettings() {
     }
 }
 
-let botGapiReady    = false;
-let botPdfDoc       = null;
-let botPdfFile      = null;
-let botSelectedPages = [];
-let botCurrentMailRow = null; // 현재 등록 중인 Sheets 행 인덱스
+let botPdfDoc         = null;
+let botPdfFile        = null;
+let botSelectedPages  = [];
+let botCurrentMailRow = null;
 
 // 수입검사 탭 전환
 function showIncomingTab(tab) {
@@ -7521,65 +7514,19 @@ function showIncomingTab(tab) {
 // Bot 탭 진입 시 초기화
 async function initBotTab() {
     await loadBotSettings();
-    if (!BOT_GOOGLE_CLIENT_ID || !BOT_SHEETS_ID) {
+    if (!BOT_SHEETS_ID) {
         document.getElementById('botMailList').innerHTML =
-            '<div class="empty-message" style="color:#EF9A9A;">Google 연동 설정이 완료되지 않았습니다.<br>관리자 설정에서 Client ID와 Sheets ID를 입력하세요.</div>';
+            '<div class="empty-message" style="color:#EF9A9A;">Google Sheets ID가 설정되지 않았습니다.<br>관리자 설정에서 Sheets ID를 입력하세요.</div>';
         return;
     }
-    loadGapiIfNeeded();
 }
 
-// Google GAPI 동적 로드
-function loadGapiIfNeeded() {
-    if (botGapiReady) return;
-    if (document.getElementById('gapiScript')) return;
-    const s = document.createElement('script');
-    s.id  = 'gapiScript';
-    s.src = 'https://apis.google.com/js/api.js';
-    s.onload = () => {
-        gapi.load('client:auth2', async () => {
-            await gapi.client.init({
-                clientId: BOT_GOOGLE_CLIENT_ID,
-                scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly',
-                discoveryDocs: [
-                    'https://sheets.googleapis.com/$discovery/rest?version=v4',
-                    'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'
-                ]
-            });
-            botGapiReady = true;
-            checkBotAuthState();
-        });
-    };
-    document.head.appendChild(s);
-}
-
-function checkBotAuthState() {
-    const authSection = document.getElementById('botGoogleAuthSection');
-    const isSignedIn  = gapi.auth2.getAuthInstance().isSignedIn.get();
-    if (isSignedIn) {
-        authSection.style.display = 'none';
-    } else {
-        authSection.style.display = 'block';
-    }
-}
-
-function botGoogleSignIn() {
-    gapi.auth2.getAuthInstance().signIn().then(() => {
-        document.getElementById('botGoogleAuthSection').style.display = 'none';
-        loadBotMailList();
-    });
-}
-
-// Google Sheets에서 미등록 메일 목록 불러오기
+// Google Sheets 공개 CSV로 목록 불러오기 (로그인 불필요)
 async function loadBotMailList() {
-    if (!botGapiReady) {
-        loadGapiIfNeeded();
+    await loadBotSettings();
+    if (!BOT_SHEETS_ID) {
         document.getElementById('botMailList').innerHTML =
-            '<div class="empty-message">Google API 초기화 중입니다. 잠시 후 다시 눌러주세요.</div>';
-        return;
-    }
-    if (!gapi.auth2.getAuthInstance().isSignedIn.get()) {
-        document.getElementById('botGoogleAuthSection').style.display = 'block';
+            '<div class="empty-message" style="color:#EF9A9A;">Sheets ID가 설정되지 않았습니다.</div>';
         return;
     }
 
@@ -7587,23 +7534,52 @@ async function loadBotMailList() {
         '<div class="empty-message">불러오는 중...</div>';
 
     try {
-        const resp = await gapi.client.sheets.spreadsheets.values.get({
-            spreadsheetId: BOT_SHEETS_ID,
-            range: `${BOT_SHEET_NAME}!A2:H`
-        });
+        // 공개 CSV 다운로드 URL (로그인 불필요)
+        const csvUrl  = `https://docs.google.com/spreadsheets/d/${BOT_SHEETS_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(BOT_SHEET_NAME)}`;
+        const resp    = await fetch(csvUrl);
+        if (!resp.ok) throw new Error('Sheets 접근 실패. 공유 설정을 확인하세요.');
+        const csvText = await resp.text();
 
-        const rows = resp.result.values || [];
-        // 컬럼: A=rowIndex, B=메일ID, C=업체명, D=수신일시, E=제목, F=파일명, G=DriveFileId, H=등록여부
-        const pending = rows
-            .map((r, i) => ({ sheetRow: i + 2, mailId: r[1], company: r[2], receivedAt: r[3], subject: r[4], fileName: r[5], driveFileId: r[6], status: r[7] }))
-            .filter(r => r.status !== '등록완료');
+        // CSV 파싱 (헤더 제외)
+        const rows = csvText.trim().split('\n').slice(1).map(line => {
+            const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g) || [];
+            return cols.map(c => c.replace(/^"|"$/g, '').trim());
+        }).filter(r => r.length >= 7);
+
+        // 컬럼: 0=RowIndex, 1=메일ID, 2=업체명, 3=수신일시, 4=제목, 5=파일명, 6=DriveFileId, 7=등록여부
+        const allRows = rows.map((r, i) => ({
+            sheetRow:    i + 2,
+            mailId:      r[1] || '',
+            company:     r[2] || '',
+            receivedAt:  r[3] || '',
+            subject:     r[4] || '',
+            fileName:    r[5] || '',
+            driveFileId: r[6] || '',
+            status:      r[7] || '미등록'
+        }));
+
+        // 서버 DB와 대조해서 이미 등록된 것 필터링
+        const driveFileIds = allRows.map(r => r.driveFileId).filter(Boolean);
+        let registeredIds  = [];
+        if (driveFileIds.length > 0) {
+            const checkResp = await fetch(`${API_BASE}/api/bot/check-registered`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ driveFileIds })
+            });
+            const checkData = await checkResp.json();
+            if (checkData.success) registeredIds = checkData.registered;
+        }
+
+        // 미등록 목록만 표시 (DB 기준 이중 체크)
+        const pending = allRows.filter(r => !registeredIds.includes(r.driveFileId));
 
         renderBotMailList(pending);
         const now = new Date().toLocaleString('ko-KR');
         document.getElementById('botLastSync').textContent = `마지막 동기화: ${now}`;
     } catch (e) {
         document.getElementById('botMailList').innerHTML =
-            `<div class="empty-message" style="color:#EF9A9A;">불러오기 실패: ${e.message || JSON.stringify(e)}</div>`;
+            `<div class="empty-message" style="color:#EF9A9A;">불러오기 실패: ${e.message}</div>`;
     }
 }
 
@@ -7698,20 +7674,16 @@ async function loadBotInspectorList() {
     } catch (e) { /* 무시 */ }
 }
 
-// Google Drive에서 PDF blob 다운로드 후 렌더링
+// Google Drive 공개 링크로 PDF 다운로드 후 렌더링 (로그인 불필요)
 async function loadBotPdf(driveFileId, fileName) {
     try {
-        const tokenObj = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse();
-        const token    = tokenObj.access_token;
-        const dlResp   = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const dlUrl  = `https://drive.google.com/uc?export=download&id=${driveFileId}`;
+        const dlResp = await fetch(dlUrl);
         if (!dlResp.ok) throw new Error(`Drive 다운로드 실패: ${dlResp.status}`);
-        const blob      = await dlResp.blob();
-        botPdfFile      = new File([blob], fileName, { type: 'application/pdf' });
-        const arrayBuf  = await blob.arrayBuffer();
-        botPdfDoc       = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+        const blob     = await dlResp.blob();
+        botPdfFile     = new File([blob], fileName, { type: 'application/pdf' });
+        const arrayBuf = await blob.arrayBuffer();
+        botPdfDoc      = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
         await renderBotPdfThumbnails();
     } catch (e) {
         document.getElementById('botPdfThumbnails').innerHTML =
@@ -7862,8 +7834,16 @@ async function submitBotLot() {
     // 검사 시작
     await startInspection(powderName, lotNumber, inspectionType, inspector, 'incoming', inspectionDate);
 
-    // Google Sheets 상태를 '일부등록'으로 업데이트
-    await updateBotSheetStatus(botCurrentMailRow.sheetRow, '일부등록');
+    // 서버 DB에 DriveFileId 저장 (중복 등록 방지 기준)
+    await fetch(`${API_BASE}/api/bot/save-drive-file-id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            powderName,
+            lotNumber,
+            driveFileId: botCurrentMailRow.driveFileId
+        })
+    });
 
     // 추가 LOT 여부 확인
     const more = confirm('LOT 등록이 완료되었습니다.\n\n이 PDF에 등록할 LOT가 더 있습니까?');
@@ -7873,31 +7853,20 @@ async function submitBotLot() {
         document.getElementById('botLotNumber').value  = '';
         botSelectedPages = [];
         document.querySelectorAll('[id^="botThumb_"]').forEach(el => {
-            el.style.borderColor  = '#444';
-            el.style.background   = '#222';
+            el.style.borderColor = '#444';
+            el.style.background  = '#222';
         });
         document.querySelectorAll('[id^="botBadge_"]').forEach(el => el.style.display = 'none');
         updateBotPdfStatus();
     } else {
-        // 최종 완료 — Sheets 등록완료 업데이트 후 모달 닫기
-        await updateBotSheetStatus(botCurrentMailRow.sheetRow, '등록완료');
         closeBotRegisterModal();
         loadBotMailList();
     }
 }
 
-// Google Sheets 행 상태 업데이트
-async function updateBotSheetStatus(rowNum, status) {
-    try {
-        await gapi.client.sheets.spreadsheets.values.update({
-            spreadsheetId: BOT_SHEETS_ID,
-            range: `${BOT_SHEET_NAME}!H${rowNum}`,
-            valueInputOption: 'RAW',
-            resource: { values: [[status]] }
-        });
-    } catch (e) {
-        console.warn('Sheets 상태 업데이트 실패:', e);
-    }
+// 공개 링크 방식에서는 Sheets 쓰기 불필요 — DB DriveFileId 기준으로 중복 체크
+function updateBotSheetStatus(rowNum, status) {
+    // no-op
 }
 
 function closeBotRegisterModal() {

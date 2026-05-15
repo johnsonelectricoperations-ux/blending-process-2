@@ -2463,7 +2463,9 @@ def ensure_millsheet_path_column():
         cols = [row[1] for row in cursor.fetchall()]
         if 'millsheet_path' not in cols:
             cursor.execute('ALTER TABLE inspection_result ADD COLUMN millsheet_path VARCHAR(500)')
-            conn.commit()
+        if 'drive_file_id' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN drive_file_id VARCHAR(200)')
+        conn.commit()
 
 ensure_millsheet_path_column()
 
@@ -4608,6 +4610,57 @@ def dashboard_mixing_inspection():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+
+
+# ============================================================
+# Bot 연동 API
+# ============================================================
+
+@app.route('/api/bot/check-registered', methods=['POST'])
+def bot_check_registered():
+    """DriveFileId 목록을 받아 이미 등록된 것 반환"""
+    try:
+        data          = request.get_json()
+        drive_file_ids = data.get('driveFileIds', [])
+        if not drive_file_ids:
+            return jsonify({'success': True, 'registered': []})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(drive_file_ids))
+            cursor.execute(
+                f'SELECT drive_file_id FROM inspection_result WHERE drive_file_id IN ({placeholders})',
+                drive_file_ids
+            )
+            registered = [row[0] for row in cursor.fetchall()]
+        return jsonify({'success': True, 'registered': registered})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/bot/save-drive-file-id', methods=['POST'])
+def bot_save_drive_file_id():
+    """검사 시작 후 drive_file_id를 inspection_result에 저장"""
+    try:
+        data          = request.get_json()
+        powder_name   = data.get('powderName')
+        lot_number    = data.get('lotNumber')
+        drive_file_id = data.get('driveFileId')
+
+        if not all([powder_name, lot_number, drive_file_id]):
+            return jsonify({'success': False, 'message': '필수 파라미터 누락'})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE inspection_result
+                SET drive_file_id = ?
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (drive_file_id, powder_name, lot_number))
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 
 # ============================================================

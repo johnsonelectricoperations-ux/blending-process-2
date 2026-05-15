@@ -317,10 +317,6 @@
                             <button class="btn secondary" onclick="loadBotMailList()" style="padding:7px 16px; font-size:0.9em;">🔄 불러오기</button>
                         </div>
                     </div>
-                    <div id="botGoogleAuthSection" style="display:none; margin-bottom:16px; padding:12px; background:#1A2A1A; border-radius:8px; border:1px solid #2E7D32;">
-                        <span style="color:#81C784; font-size:0.9em;">Google 계정 인증이 필요합니다.</span>
-                        <button class="btn" onclick="botGoogleSignIn()" style="margin-left:12px; padding:6px 14px; font-size:0.85em;">Google 로그인</button>
-                    </div>
                     <div id="botMailList">
                         <div class="empty-message">불러오기 버튼을 눌러 메일 목록을 가져오세요.</div>
                     </div>
@@ -1227,10 +1223,6 @@
                         <div>3. Sheets 내 메일 로그가 저장되는 시트 이름을 입력하세요 (기본값: MailLog).</div>
                     </div>
                     <div style="display:grid; grid-template-columns:1fr; gap:14px; max-width:600px;">
-                        <div class="form-group">
-                            <label>Google OAuth Client ID</label>
-                            <input type="text" id="botSettingsClientId" placeholder="xxxxxxxx.apps.googleusercontent.com">
-                        </div>
                         <div class="form-group">
                             <label>Google Sheets ID</label>
                             <input type="text" id="botSettingsSheetsId" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
