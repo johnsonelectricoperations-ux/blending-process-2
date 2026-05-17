@@ -4655,7 +4655,7 @@ def dashboard_mixing_inspection():
 
 @app.route('/api/bot/check-registered', methods=['POST'])
 def bot_check_registered():
-    """DriveFileId 목록을 받아 이미 등록된 것 반환 (bot_registered 테이블 기준)"""
+    """DriveFileId 목록을 받아 이미 등록된 것 반환 (bot_registered + inspection_result 양쪽 확인)"""
     try:
         data          = request.get_json()
         drive_file_ids = data.get('driveFileIds', [])
@@ -4665,10 +4665,16 @@ def bot_check_registered():
         with closing(get_db()) as conn:
             cursor = conn.cursor()
             placeholders = ','.join('?' * len(drive_file_ids))
-            cursor.execute(
-                f'SELECT drive_file_id FROM bot_registered WHERE drive_file_id IN ({placeholders})',
-                drive_file_ids
-            )
+            # bot_registered: 이번 수정 이후 등록된 건
+            # inspection_result: 이전 방식으로 저장된 건 (drive_file_id가 있는 경우)
+            cursor.execute(f'''
+                SELECT drive_file_id FROM bot_registered
+                WHERE drive_file_id IN ({placeholders})
+                UNION
+                SELECT drive_file_id FROM inspection_result
+                WHERE drive_file_id IN ({placeholders})
+                  AND drive_file_id IS NOT NULL AND drive_file_id != ''
+            ''', drive_file_ids + drive_file_ids)
             registered = [row[0] for row in cursor.fetchall()]
         return jsonify({'success': True, 'registered': registered})
     except Exception as e:
