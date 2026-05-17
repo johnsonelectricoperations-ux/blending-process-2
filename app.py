@@ -2469,6 +2469,24 @@ def ensure_millsheet_path_column():
 
 ensure_millsheet_path_column()
 
+
+def ensure_bot_registered_table():
+    """Bot 등록 이력 테이블 생성 (DriveFileId 기준 중복 방지용)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_registered (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                drive_file_id TEXT UNIQUE NOT NULL,
+                powder_name TEXT,
+                lot_number TEXT,
+                registered_at TIMESTAMP DEFAULT (datetime('now','localtime'))
+            )
+        ''')
+        conn.commit()
+
+ensure_bot_registered_table()
+
 # ---------------------------------------------------------------------------
 # Millsheet 업로드 API
 # ---------------------------------------------------------------------------
@@ -4637,7 +4655,7 @@ def dashboard_mixing_inspection():
 
 @app.route('/api/bot/check-registered', methods=['POST'])
 def bot_check_registered():
-    """DriveFileId 목록을 받아 이미 등록된 것 반환"""
+    """DriveFileId 목록을 받아 이미 등록된 것 반환 (bot_registered 테이블 기준)"""
     try:
         data          = request.get_json()
         drive_file_ids = data.get('driveFileIds', [])
@@ -4648,7 +4666,7 @@ def bot_check_registered():
             cursor = conn.cursor()
             placeholders = ','.join('?' * len(drive_file_ids))
             cursor.execute(
-                f'SELECT drive_file_id FROM inspection_result WHERE drive_file_id IN ({placeholders})',
+                f'SELECT drive_file_id FROM bot_registered WHERE drive_file_id IN ({placeholders})',
                 drive_file_ids
             )
             registered = [row[0] for row in cursor.fetchall()]
@@ -4659,7 +4677,7 @@ def bot_check_registered():
 
 @app.route('/api/bot/save-drive-file-id', methods=['POST'])
 def bot_save_drive_file_id():
-    """검사 시작 후 drive_file_id를 inspection_result에 저장"""
+    """검사 등록 즉시 bot_registered에 기록 (검사 완료 여부와 무관하게 중복 방지)"""
     try:
         data          = request.get_json()
         powder_name   = data.get('powderName')
@@ -4671,10 +4689,17 @@ def bot_save_drive_file_id():
 
         with closing(get_db()) as conn:
             cursor = conn.cursor()
+            # bot_registered에 즉시 기록 (UNIQUE 제약으로 중복 무시)
+            cursor.execute('''
+                INSERT OR IGNORE INTO bot_registered (drive_file_id, powder_name, lot_number)
+                VALUES (?, ?, ?)
+            ''', (drive_file_id, powder_name, lot_number))
+            # inspection_result에도 반영 (이미 생성된 경우)
             cursor.execute('''
                 UPDATE inspection_result
                 SET drive_file_id = ?
                 WHERE powder_name = ? AND lot_number = ?
+                  AND (drive_file_id IS NULL OR drive_file_id = '')
             ''', (drive_file_id, powder_name, lot_number))
             conn.commit()
         return jsonify({'success': True})
