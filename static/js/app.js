@@ -5994,7 +5994,6 @@ function t(key) {
                         <th style="padding:8px 10px; text-align:center;">경과</th>
                         <th style="padding:8px 10px; text-align:left;">NG 항목</th>
                         <th style="padding:8px 10px; text-align:center;">상태</th>
-                        <th style="padding:8px 10px; text-align:center;">액션</th>
                     </tr></thead><tbody>`;
 
                 allRows.forEach(row => {
@@ -6004,10 +6003,6 @@ function t(key) {
                     const st      = row.status;
                     const stStyle = statusStyle[st] || '';
                     const round   = row.current_round > 1 ? ` (${row.current_round}차)` : '';
-                    const actionBtn = st === 'NG확정'
-                        ? `<button class="btn secondary" style="padding:3px 10px; font-size:0.8em;"
-                             onclick="openRetestModal('${row.powder_name}','${row.lot_number}')">재검사</button>`
-                        : '-';
                     html += `<tr style="border-bottom:1px solid #2A2A2A;">
                         <td style="padding:8px 10px; font-weight:600;">${row.powder_name}</td>
                         <td style="padding:8px 10px; color:#A0A0A0;">${row.lot_number}</td>
@@ -6017,7 +6012,6 @@ function t(key) {
                         <td style="padding:8px 10px; text-align:center;">
                             <span style="padding:2px 8px; border-radius:4px; font-size:0.8em; font-weight:600; ${stStyle}">${st}${round}</span>
                         </td>
-                        <td style="padding:8px 10px; text-align:center;">${actionBtn}</td>
                     </tr>`;
                 });
 

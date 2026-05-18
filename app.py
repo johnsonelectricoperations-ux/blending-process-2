@@ -454,10 +454,11 @@ def _do_start_inspection():
                 'savedValues': saved_values  # 저장된 측정값 추가
             })
 
-        # 2. 완료된 검사 확인
+        # 2. 완료된 검사 확인 (final_result가 NULL이면 재검사 진행 중 → 완료로 보지 않음)
         cursor.execute('''
             SELECT * FROM inspection_result
             WHERE powder_name = ? AND lot_number = ?
+              AND final_result IS NOT NULL
         ''', (powder_name, lot_number))
         result_row = cursor.fetchone()
 
@@ -492,8 +493,13 @@ def _do_start_inspection():
                 })
             cursor.execute('''
                 INSERT INTO inspection_result
-                (powder_name, lot_number, inspection_type, inspector, category, inspection_date, final_result, millsheet_path)
+                    (powder_name, lot_number, inspection_type, inspector, category, inspection_date, final_result, millsheet_path)
                 VALUES (?, ?, ?, ?, ?, ?, 'PASS', ?)
+                ON CONFLICT(powder_name, lot_number) DO UPDATE SET
+                    inspection_type=excluded.inspection_type, inspector=excluded.inspector,
+                    category=excluded.category, inspection_date=excluded.inspection_date,
+                    final_result='PASS', millsheet_path=excluded.millsheet_path,
+                    current_round=COALESCE(current_round, 1)
             ''', (powder_name, lot_number, inspection_type, inspector, category, inspection_date, millsheet_rel_path))
             conn.commit()
             return jsonify({
