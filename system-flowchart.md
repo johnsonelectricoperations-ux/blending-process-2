@@ -16,13 +16,18 @@ flowchart TD
     START([🚀 시스템 초기 설정]):::startEnd
 
     START --> ADM1[분말 규격 등록\n검사항목별 Min/Max 기준값]:::adminNode
-    ADM1 --> ADM2[배합분말 등록\n제품 코드 · 분말 카테고리]:::adminNode
-    ADM2 --> ADM3[레시피 등록\n제품별 배합비율 · 허용오차]:::adminNode
-    ADM3 --> ADM4[검사자 · 작업자 등록]:::adminNode
-    ADM4 --> ADM5[사용자 계정 · 메뉴 권한 설정]:::adminNode
-    ADM5 --> ADM6[Auto Email Bot 설정\nSheets ID · Drive API Key]:::adminNode
+    START --> ADM2[배합분말 등록\n제품 코드 · 분말 카테고리]:::adminNode
+    START --> ADM3[레시피 등록\n제품별 배합비율 · 허용오차]:::adminNode
+    START --> ADM4[검사자 · 작업자 등록]:::adminNode
+    START --> ADM5[사용자 계정 · 메뉴 권한 설정]:::adminNode
+    START --> ADM6[Auto Email Bot 설정\nSheets ID · Drive API Key]:::adminNode
 
-    ADM6 --> OP([⚙️ 운영 시작]):::startEnd
+    ADM1 --> OP([⚙️ 운영 시작]):::startEnd
+    ADM2 --> OP
+    ADM3 --> OP
+    ADM4 --> OP
+    ADM5 --> OP
+    ADM6 --> OP
 
     %% ════════════════════════════════════════════════════════
     %% 1. 수입검사
