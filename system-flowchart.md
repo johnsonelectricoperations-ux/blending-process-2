@@ -3,12 +3,12 @@
 flowchart TD
     %% ─── 스타일 정의 ───────────────────────────────────────
     classDef startEnd  fill:#F07D00,stroke:#D06E00,color:#fff,font-weight:bold
-    classDef process   fill:#1E1E1E,stroke:#F07D00,color:#E8E8E8
-    classDef decision  fill:#2A2A2A,stroke:#42A5F5,color:#E8E8E8
-    classDef passNode  fill:#1B5E20,stroke:#4CAF50,color:#fff
-    classDef failNode  fill:#B71C1C,stroke:#EF5350,color:#fff
-    classDef adminNode fill:#1A237E,stroke:#42A5F5,color:#fff
-    classDef labelNode fill:#4A148C,stroke:#CE93D8,color:#fff
+    classDef process   fill:#FFF8F0,stroke:#F07D00,color:#222
+    classDef decision  fill:#E3F2FD,stroke:#1565C0,color:#222
+    classDef passNode  fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20,font-weight:bold
+    classDef failNode  fill:#FFEBEE,stroke:#C62828,color:#B71C1C,font-weight:bold
+    classDef adminNode fill:#E8EAF6,stroke:#283593,color:#1A237E
+    classDef labelNode fill:#F3E5F5,stroke:#6A1B9A,color:#4A148C
 
     %% ════════════════════════════════════════════════════════
     %% 0. 관리자 초기 설정 (시스템 사용 전 선행 필수)
