@@ -1,5 +1,8 @@
 // Gmail Bot: 화이트리스트 메일 수신 시 Drive 저장 + Sheets 기록
 // Last updated: 2026-05-18
+// 수정이력:
+//   2026-05-18 - Whitelist 시트 null 체크 추가
+//   2026-05-18 - PDF 판별 시 MIME 타입 외 파일 확장자(.pdf) 병행 확인 추가
 
 const DRIVE_FOLDER_ID = '1kFF1qnqUSs1ZaK-IkD5IjK7osY3mjF2T';
 const SPREADSHEET_ID  = '1A1VA6VcNq3GIuS1CLmKkgLOyhYexOHlwRP2dSJZV8RU';
@@ -56,8 +59,11 @@ function checkNewMails() {
       const companyName = WHITELIST[senderEmail];
       if (!companyName) return;
 
+      // MIME 타입이 application/pdf가 아니더라도 확장자가 .pdf면 PDF로 처리
+      // (일부 해외 메일 시스템이 PDF를 application/octet-stream 등으로 전송하는 경우 대응)
       const pdfFiles = message.getAttachments({ includeInlineImages: false })
-                              .filter(a => a.getContentType() === 'application/pdf');
+                              .filter(a => a.getContentType() === 'application/pdf' ||
+                                          a.getName().toLowerCase().endsWith('.pdf'));
       if (pdfFiles.length === 0) return;
 
       // 업체별 하위 폴더 확인 또는 생성
