@@ -38,9 +38,7 @@ flowchart TD
     D3 -->|등록| C
     D3 -->|무시| D4[무시 처리\n목록에서 제외]:::process
 
-    C --> E[항목별 측정값 입력\n유동도·밀도·탄소·수분 등 11종]:::process
-    E --> F[입도분석 입력\nMesh별 잔류율]:::process
-    F --> G{규격 대비 자동 판정}:::decision
+    C --> G{규격 대비 자동 판정}:::decision
 
     G -->|PASS| H[수입검사 합격\n배합 투입 가능]:::passNode
     G -->|FAIL| I[수입검사 불합격 NG]:::failNode
