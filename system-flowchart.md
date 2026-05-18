@@ -1,4 +1,5 @@
 ```mermaid
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
 flowchart TD
     %% ─── 스타일 정의 ───────────────────────────────────────
     classDef startEnd  fill:#F07D00,stroke:#D06E00,color:#fff,font-weight:bold
@@ -6,13 +7,26 @@ flowchart TD
     classDef decision  fill:#2A2A2A,stroke:#42A5F5,color:#E8E8E8
     classDef passNode  fill:#1B5E20,stroke:#4CAF50,color:#fff
     classDef failNode  fill:#B71C1C,stroke:#EF5350,color:#fff
-    classDef subHead   fill:#1A237E,stroke:#42A5F5,color:#fff,font-weight:bold
+    classDef adminNode fill:#1A237E,stroke:#42A5F5,color:#fff
+
+    %% ════════════════════════════════════════════════════════
+    %% 0. 관리자 초기 설정 (시스템 사용 전 선행 필수)
+    %% ════════════════════════════════════════════════════════
+    START([🚀 시스템 초기 설정]):::startEnd
+
+    START --> ADM1[분말 규격 등록\n검사항목별 Min/Max 기준값]:::adminNode
+    ADM1 --> ADM2[배합분말 등록\n제품 코드 · 분말 카테고리]:::adminNode
+    ADM2 --> ADM3[레시피 등록\n제품별 배합비율 · 허용오차]:::adminNode
+    ADM3 --> ADM4[검사자 · 작업자 등록]:::adminNode
+    ADM4 --> ADM5[사용자 계정 · 메뉴 권한 설정]:::adminNode
+    ADM5 --> ADM6[Bot 설정\nGoogle Sheets ID · Drive API Key]:::adminNode
+
+    ADM6 --> OP([⚙️ 운영 시작]):::startEnd
 
     %% ════════════════════════════════════════════════════════
     %% 1. 수입검사
     %% ════════════════════════════════════════════════════════
-    A([🚀 시스템 시작]):::startEnd
-    A --> B{입고 방식}:::decision
+    OP --> B{입고 방식}:::decision
 
     B -->|수동 입력| C[수입검사 등록\n분말명 · LOT번호 · 검사자 입력]:::process
     B -->|Bot 자동| D[Gmail Bot 자동 수신\nWhitelist 발신자 메일 감지]:::process
@@ -84,16 +98,10 @@ flowchart TD
     AF --> AG[배합별 투입중량 · 편차\n검사결과 표시]:::process
 
     %% ════════════════════════════════════════════════════════
-    %% 5. 대시보드 & 관리자
+    %% 5. 대시보드
     %% ════════════════════════════════════════════════════════
     AE --> AH([📊 대시보드 모니터링\nKPI · NG현황 · 일별트렌드 · 합격률]):::startEnd
     AG --> AH
     AB --> AH
-
-    AH --> AI{관리자 설정}:::decision
-    AI -->|분말 규격 관리| AJ[검사항목별 Min/Max 등록]:::process
-    AI -->|레시피 관리| AK[제품별 배합비율 · 허용오차 설정]:::process
-    AI -->|인원 관리| AL[검사자 · 작업자 등록]:::process
-    AI -->|사용자 권한| AM[메뉴별 접근 권한 설정]:::process
-    AI -->|Bot 설정| AN[Google Sheets ID · API Key 설정]:::process
+    I5 --> AH
 ```
