@@ -5389,14 +5389,22 @@ function t(key) {
                 { label: '성형하중',      prefix: 'forming_load',     unit: 'MPa' },
             ];
 
+            const spec = insp.powder_spec || {};
             const measuredRows = measureItems
                 .filter(item => insp[`${item.prefix}_avg`] != null && insp[`${item.prefix}_avg`] !== '')
                 .map(item => {
                     const avg = insp[`${item.prefix}_avg`];
                     const res = insp[`${item.prefix}_result`];
                     const rc  = res === 'PASS' ? '#4CAF50' : '#EF5350';
+                    const specMin = spec[`${item.prefix}_min`];
+                    const specMax = spec[`${item.prefix}_max`];
+                    let specText = '-';
+                    if (specMin != null && specMax != null) specText = `${specMin} ~ ${specMax}`;
+                    else if (specMin != null) specText = `≥ ${specMin}`;
+                    else if (specMax != null) specText = `≤ ${specMax}`;
                     return `<tr style="border-bottom:1px solid #2C2C2C;">
                         <td style="padding:5px 10px; color:#A0A0A0; font-size:0.85em;">${item.label}</td>
+                        <td style="padding:5px 10px; color:#888; font-size:0.85em;">${specText}</td>
                         <td style="padding:5px 10px; font-weight:600; font-size:0.9em;">${avg} ${item.unit}</td>
                         <td style="padding:5px 10px;"><span style="color:${rc}; font-weight:700; font-size:0.85em;">${res || '-'}</span></td>
                     </tr>`;
@@ -5407,6 +5415,7 @@ function t(key) {
             const psRow = psResult
                 ? `<tr style="border-bottom:1px solid #2C2C2C;">
                     <td style="padding:5px 10px; color:#A0A0A0; font-size:0.85em;">입도분석</td>
+                    <td style="padding:5px 10px; font-size:0.85em; color:#888;">-</td>
                     <td style="padding:5px 10px; font-size:0.85em; color:#A0A0A0;">-</td>
                     <td style="padding:5px 10px;"><span style="color:${psResult === 'PASS' ? '#4CAF50' : '#EF5350'}; font-weight:700; font-size:0.85em;">${psResult}</span></td>
                   </tr>` : '';
@@ -5416,6 +5425,7 @@ function t(key) {
                     <table style="width:100%; border-collapse:collapse;">
                         <thead><tr style="color:#666; font-size:0.8em;">
                             <th style="padding:4px 10px; text-align:left; font-weight:400;">검사항목</th>
+                            <th style="padding:4px 10px; text-align:left; font-weight:400;">규격</th>
                             <th style="padding:4px 10px; text-align:left; font-weight:400;">평균값</th>
                             <th style="padding:4px 10px; text-align:left; font-weight:400;">결과</th>
                         </tr></thead>

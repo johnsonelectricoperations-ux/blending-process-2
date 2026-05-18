@@ -3546,6 +3546,11 @@ def trace_by_batch_lot(batch_lot):
                     [l.strip() for l in material['material_lot'].split(',') if l.strip()]
                 ))
 
+                # powder_spec 조회 (규격 표시용)
+                cursor.execute('SELECT * FROM powder_spec WHERE powder_name = ?', (material['powder_name'],))
+                spec_row = cursor.fetchone()
+                powder_spec = dict_from_row(spec_row) if spec_row else {}
+
                 inspections = []
                 for lot_num in lot_numbers:
                     cursor.execute('''
@@ -3556,6 +3561,7 @@ def trace_by_batch_lot(batch_lot):
                     row = cursor.fetchone()
                     if row:
                         insp = dict_from_row(row)
+                        insp['powder_spec'] = powder_spec
                         # 재검사 이력 조회
                         cursor.execute('''
                             SELECT round, inspector, inspection_date, final_result,
@@ -3627,6 +3633,11 @@ def trace_by_material_lot(material_lot):
                 ORDER BY round ASC
             ''', (inspection['powder_name'], material_lot))
             inspection['inspection_histories'] = [dict_from_row(h) for h in cursor.fetchall()]
+
+            # powder_spec 조회 (규격 표시용)
+            cursor.execute('SELECT * FROM powder_spec WHERE powder_name = ?', (inspection['powder_name'],))
+            spec_row = cursor.fetchone()
+            inspection['powder_spec'] = dict_from_row(spec_row) if spec_row else {}
 
             # inspection에서 powder_name 가져오기 (빈 문자열인 경우 대비)
             actual_powder_name = inspection['powder_name']
