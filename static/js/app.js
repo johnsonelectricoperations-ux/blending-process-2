@@ -258,7 +258,21 @@ function t(key) {
         labelPack: 'Pack',
         labelWeight: '중량',
         labelDate: '작업날짜',
-        printLabel: '인쇄'
+        printLabel: '인쇄',
+
+        // 추적성 조회
+        backwardTrace: '역방향 추적 (배합 LOT → 원재료)',
+        forwardTrace: '순방향 추적 (원재료 LOT → 배합)',
+        incomingInspection: '수입검사',
+        materialInputHistory: '원재료 투입 이력',
+        materialInputHistoryDesc: '이 배합에 사용된 원재료 LOT 및 수입검사 결과',
+        usageHistory: '배합 사용 이력',
+        usageHistoryDesc: '이 원재료 LOT가 사용된 배합 작업 목록',
+        materialLot: '원재료 LOT',
+        targetWeight: '목표 중량',
+        actualWeight: '실투입 중량',
+        weightDeviation: '중량 편차',
+        noUsageHistory: '사용 이력이 없습니다'
     };
     return ko[key] || key;
 }

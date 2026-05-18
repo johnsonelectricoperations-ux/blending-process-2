@@ -3667,6 +3667,17 @@ def trace_by_material_lot(material_lot):
 
             usages = [dict_from_row(row) for row in cursor.fetchall()]
 
+            # weight_deviation, is_valid 계산
+            for usage in usages:
+                actual = float(usage.get('actual_weight') or 0)
+                target = float(usage.get('target_weight') or 0)
+                if target > 0:
+                    dev = round((actual - target) / target * 100, 2)
+                else:
+                    dev = 0
+                usage['weight_deviation'] = dev
+                usage['is_valid'] = abs(dev) <= 3
+
             # 시간 필드 KST 변환
             convert_times_in_dict(inspection)
             for usage in usages:
