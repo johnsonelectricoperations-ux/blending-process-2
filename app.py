@@ -3549,8 +3549,7 @@ def trace_by_batch_lot(batch_lot):
                 inspections = []
                 for lot_num in lot_numbers:
                     cursor.execute('''
-                        SELECT powder_name, lot_number, inspection_type, inspector,
-                               inspection_time, final_result, current_round, retest_reason
+                        SELECT *
                         FROM inspection_result
                         WHERE lot_number = ? AND powder_name = ? AND category = 'incoming'
                     ''', (lot_num, material['powder_name']))

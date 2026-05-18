@@ -5370,11 +5370,61 @@ function t(key) {
 
         // 수입검사 결과 블록 렌더 (회차 + 재검사 이력 포함)
         function renderInspectionBlock(insp, showLot = false) {
-            const round     = insp.current_round || 1;
-            const roundTag  = round > 1 ? `<span style="background:#F07D00;color:#fff;padding:1px 7px;border-radius:4px;font-size:0.75em;margin-left:6px;">${round}차 검사</span>` : '';
-            const lotTag    = showLot ? ` — LOT: ${insp.lot_number}` : '';
+            const round      = insp.current_round || 1;
+            const roundTag   = round > 1 ? `<span style="background:#F07D00;color:#fff;padding:1px 7px;border-radius:4px;font-size:0.75em;margin-left:6px;">${round}차 검사</span>` : '';
+            const lotTag     = showLot ? ` — LOT: ${insp.lot_number}` : '';
             const borderColor = insp.final_result === 'PASS' ? '#4CAF50' : '#EF5350';
+
+            // 항목별 측정값 (평균값 + 결과)
+            const measureItems = [
+                { label: '유동도',        prefix: 'flow_rate',        unit: 's/50g' },
+                { label: '겉보기밀도',    prefix: 'apparent_density', unit: 'g/cm³' },
+                { label: '탄소함량',      prefix: 'c_content',        unit: '%' },
+                { label: '구리함량',      prefix: 'cu_content',       unit: '%' },
+                { label: '수분',          prefix: 'moisture',         unit: '%' },
+                { label: '회분',          prefix: 'ash',              unit: '%' },
+                { label: '소결치수변화율', prefix: 'sinter_change_rate', unit: '%' },
+                { label: '소결강도',      prefix: 'sinter_strength',  unit: 'MPa' },
+                { label: '성형강도',      prefix: 'forming_strength', unit: 'N' },
+                { label: '성형하중',      prefix: 'forming_load',     unit: 'MPa' },
+            ];
+
+            const measuredRows = measureItems
+                .filter(item => insp[`${item.prefix}_avg`] != null && insp[`${item.prefix}_avg`] !== '')
+                .map(item => {
+                    const avg = insp[`${item.prefix}_avg`];
+                    const res = insp[`${item.prefix}_result`];
+                    const rc  = res === 'PASS' ? '#4CAF50' : '#EF5350';
+                    return `<tr style="border-bottom:1px solid #2C2C2C;">
+                        <td style="padding:5px 10px; color:#A0A0A0; font-size:0.85em;">${item.label}</td>
+                        <td style="padding:5px 10px; font-weight:600; font-size:0.9em;">${avg} ${item.unit}</td>
+                        <td style="padding:5px 10px;"><span style="color:${rc}; font-weight:700; font-size:0.85em;">${res || '-'}</span></td>
+                    </tr>`;
+                }).join('');
+
+            // 입도분석
+            const psResult = insp.particle_size_result;
+            const psRow = psResult
+                ? `<tr style="border-bottom:1px solid #2C2C2C;">
+                    <td style="padding:5px 10px; color:#A0A0A0; font-size:0.85em;">입도분석</td>
+                    <td style="padding:5px 10px; font-size:0.85em; color:#A0A0A0;">-</td>
+                    <td style="padding:5px 10px;"><span style="color:${psResult === 'PASS' ? '#4CAF50' : '#EF5350'}; font-weight:700; font-size:0.85em;">${psResult}</span></td>
+                  </tr>` : '';
+
+            const measureBlock = (measuredRows || psRow)
+                ? `<div style="margin-top:12px; border-top:1px solid #333; padding-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr style="color:#666; font-size:0.8em;">
+                            <th style="padding:4px 10px; text-align:left; font-weight:400;">검사항목</th>
+                            <th style="padding:4px 10px; text-align:left; font-weight:400;">평균값</th>
+                            <th style="padding:4px 10px; text-align:left; font-weight:400;">결과</th>
+                        </tr></thead>
+                        <tbody>${measuredRows}${psRow}</tbody>
+                    </table>
+                  </div>` : '';
+
             const histBlock = renderInspectionHistoryBlock(insp);
+
             return `
                 <div style="background:rgba(66,165,245,0.07); padding:14px; border-radius:6px; border-left:4px solid ${borderColor}; margin-bottom:8px;">
                     <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
@@ -5387,6 +5437,7 @@ function t(key) {
                         <div><p style="color:#A0A0A0;font-size:0.82em;margin-bottom:2px;">${t('inspectionTime')}</p><p style="font-weight:600;font-size:0.92em;">${insp.inspection_time || '-'}</p></div>
                         <div><p style="color:#A0A0A0;font-size:0.82em;margin-bottom:2px;">검사 유형</p><p style="font-weight:600;font-size:0.92em;">${insp.inspection_type || '-'}</p></div>
                     </div>
+                    ${measureBlock}
                     ${histBlock}
                 </div>`;
         }
