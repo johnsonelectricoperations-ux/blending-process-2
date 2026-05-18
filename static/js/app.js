@@ -5345,27 +5345,33 @@ function t(key) {
 
                         ${!isValid ? `<p style="color: #EF5350; margin-bottom: 15px; font-weight: 600;">⚠️ ${material.validation_message}</p>` : ''}
 
-                        ${inspection ? `
-                            <div style="background: rgba(66, 165, 245, 0.1); padding: 15px; border-radius: 5px; border-left: 4px solid #F07D00;">
-                                <h5 style="margin: 0 0 10px 0; color: #1976D2;">✓ ${t('incomingInspection')}</h5>
-                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                                    <div>
-                                        <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspector')}</p>
-                                        <p style="font-weight: 600; font-size: 0.95em;">${inspection.inspector}</p>
-                                    </div>
-                                    <div>
-                                        <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspectionTime')}</p>
-                                        <p style="font-weight: 600; font-size: 0.95em;">${inspection.inspection_time}</p>
-                                    </div>
-                                    <div>
-                                        <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('finalResult')}</p>
-                                        <p style="font-weight: 600; font-size: 0.95em;">
-                                            <span class="badge ${inspection.final_result === 'PASS' ? 'pass' : 'fail'}">${inspection.final_result}</span>
-                                        </p>
+                        ${(() => {
+                            const inspections = material.incoming_inspections || (inspection ? [inspection] : []);
+                            if (inspections.length === 0) {
+                                return '<p style="color: #EF5350;">⚠️ 수입검사 기록 없음</p>';
+                            }
+                            return inspections.map(insp => `
+                                <div style="background: rgba(66, 165, 245, 0.1); padding: 15px; border-radius: 5px; border-left: 4px solid #F07D00; margin-bottom: 8px;">
+                                    <h5 style="margin: 0 0 10px 0; color: #1976D2;">✓ ${t('incomingInspection')}${inspections.length > 1 ? ' — LOT: ' + insp.lot_number : ''}</h5>
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                                        <div>
+                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspector')}</p>
+                                            <p style="font-weight: 600; font-size: 0.95em;">${insp.inspector}</p>
+                                        </div>
+                                        <div>
+                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspectionTime')}</p>
+                                            <p style="font-weight: 600; font-size: 0.95em;">${insp.inspection_time}</p>
+                                        </div>
+                                        <div>
+                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('finalResult')}</p>
+                                            <p style="font-weight: 600; font-size: 0.95em;">
+                                                <span class="badge ${insp.final_result === 'PASS' ? 'pass' : 'fail'}">${insp.final_result}</span>
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ` : '<p style="color: #EF5350;">⚠️ 수입검사 기록 없음</p>'}
+                            `).join('');
+                        })()}
                     </div>
                 `;
             });

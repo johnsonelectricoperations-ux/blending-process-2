@@ -3460,20 +3460,26 @@ def trace_by_batch_lot(batch_lot):
                     )
             material_inputs = list(grouped.values())
 
-            # 3. 각 원재료의 수입검사 결과 조회 (제품명과 lot번호로 조회)
+            # 3. 각 원재료의 수입검사 결과 조회 (LOT가 쉼표로 합쳐진 경우 분리하여 각각 조회)
             for material in material_inputs:
-                cursor.execute('''
-                    SELECT powder_name, lot_number, inspection_type, inspector,
-                           inspection_time, final_result
-                    FROM inspection_result
-                    WHERE lot_number = ? AND powder_name = ? AND category = 'incoming'
-                ''', (material['material_lot'], material['powder_name']))
+                lot_numbers = list(dict.fromkeys(
+                    [l.strip() for l in material['material_lot'].split(',') if l.strip()]
+                ))
 
-                inspection_row = cursor.fetchone()
-                if inspection_row:
-                    material['incoming_inspection'] = dict_from_row(inspection_row)
-                else:
-                    material['incoming_inspection'] = None
+                inspections = []
+                for lot_num in lot_numbers:
+                    cursor.execute('''
+                        SELECT powder_name, lot_number, inspection_type, inspector,
+                               inspection_time, final_result
+                        FROM inspection_result
+                        WHERE lot_number = ? AND powder_name = ? AND category = 'incoming'
+                    ''', (lot_num, material['powder_name']))
+                    row = cursor.fetchone()
+                    if row:
+                        inspections.append(dict_from_row(row))
+
+                material['incoming_inspection'] = inspections[0] if inspections else None
+                material['incoming_inspections'] = inspections
 
             return jsonify({
                 'success': True,
