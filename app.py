@@ -2521,9 +2521,15 @@ def ensure_bot_registered_table():
                 drive_file_id TEXT UNIQUE NOT NULL,
                 powder_name TEXT,
                 lot_number TEXT,
+                status TEXT DEFAULT 'registered',
                 registered_at TIMESTAMP DEFAULT (datetime('now','localtime'))
             )
         ''')
+        # 기존 테이블에 status 컬럼 없으면 추가 (마이그레이션)
+        try:
+            cursor.execute("ALTER TABLE bot_registered ADD COLUMN status TEXT DEFAULT 'registered'")
+        except Exception:
+            pass
         conn.commit()
 
 ensure_bot_registered_table()
@@ -4846,6 +4852,28 @@ def bot_save_drive_file_id():
                 WHERE powder_name = ? AND lot_number = ?
                   AND (drive_file_id IS NULL OR drive_file_id = '')
             ''', (drive_file_id, powder_name, lot_number))
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/bot/ignore', methods=['POST'])
+def bot_ignore_drive_file():
+    """불필요한 첨부파일을 무시 처리 (목록에서 제외, 파일은 보존)"""
+    try:
+        data = request.get_json()
+        drive_file_id = data.get('driveFileId')
+        if not drive_file_id:
+            return jsonify({'success': False, 'message': 'driveFileId 누락'})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO bot_registered (drive_file_id, powder_name, lot_number, status)
+                VALUES (?, '', '', 'ignored')
+                ON CONFLICT(drive_file_id) DO UPDATE SET status = 'ignored'
+            ''', (drive_file_id,))
             conn.commit()
         return jsonify({'success': True})
     except Exception as e:

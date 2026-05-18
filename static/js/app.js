@@ -7878,15 +7878,50 @@ function renderBotMailList(rows) {
             <td style="padding:10px 12px; color:#A0A0A0; font-size:0.9em;">${row.receivedAt || '-'}</td>
             <td style="padding:10px 12px; color:#A0A0A0; font-size:0.88em; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${row.fileName || ''}">${row.fileName || '-'}</td>
             <td style="padding:10px 12px; text-align:center;">${statusBadge}</td>
-            <td style="padding:10px 12px; text-align:center;">
+            <td style="padding:10px 12px; text-align:center; display:flex; gap:6px; justify-content:center;">
                 <button class="btn secondary" style="padding:5px 14px; font-size:0.85em;"
                     onclick="openBotRegisterModal(${JSON.stringify(row).replace(/"/g, '&quot;')})">열기</button>
+                <button class="btn" style="padding:5px 12px; font-size:0.85em; background:#444; color:#A0A0A0;"
+                    onclick="ignoreBotItem('${row.driveFileId}', this)">무시</button>
             </td>
         </tr>`;
     });
 
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+// Bot 항목 무시 처리 (등록 없이 목록에서 제외)
+async function ignoreBotItem(driveFileId, btn) {
+    if (!confirm('이 항목을 무시하시겠습니까?\n목록에서 제외되며 파일은 보존됩니다.')) return;
+    try {
+        btn.disabled = true;
+        btn.textContent = '처리중...';
+        const resp = await fetch(`${API_BASE}/api/bot/ignore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ driveFileId })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            // 해당 행만 제거
+            btn.closest('tr').remove();
+            // 남은 행이 없으면 빈 메시지 표시
+            const tbody = document.querySelector('#botMailList tbody');
+            if (tbody && tbody.querySelectorAll('tr').length === 0) {
+                document.getElementById('botMailList').innerHTML =
+                    '<div class="empty-message">미등록 메일이 없습니다.</div>';
+            }
+        } else {
+            alert('무시 처리 실패: ' + (data.message || ''));
+            btn.disabled = false;
+            btn.textContent = '무시';
+        }
+    } catch (e) {
+        alert('오류: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '무시';
+    }
 }
 
 // Bot LOT 등록 모달 열기
