@@ -1930,9 +1930,17 @@ function t(key) {
                             <p style="font-size: 1.2em; font-weight: 600;">${detail.inspection_type}</p>
                         </div>
                     </div>
-                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
-                        <p style="font-size: 1.1em; opacity: 0.9;">${t('finalResult')}</p>
-                        <p style="font-size: 1.5em; font-weight: 700; margin-top: 5px;">${detail.final_result}</p>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <p style="font-size: 1.1em; opacity: 0.9;">${t('finalResult')}</p>
+                            <p style="font-size: 1.5em; font-weight: 700; margin-top: 5px;">${detail.final_result || '-'}</p>
+                            ${detail.current_round > 1 ? `<p style="font-size:0.85em; opacity:0.7; margin-top:4px;">${detail.current_round}차 검사</p>` : ''}
+                        </div>
+                        ${detail.final_result === 'FAIL' ? `
+                        <button class="btn" onclick="openRetestModal('${detail.powder_name}','${detail.lot_number}')"
+                            style="background:#F07D00; padding:10px 18px; font-size:0.9em;">
+                            🔄 재검사 요청
+                        </button>` : ''}
                     </div>
                 </div>
                 <div class="card">
@@ -5899,7 +5907,8 @@ function t(key) {
             await Promise.all([
                 loadBlendingCompletionChart(dashboardPeriods.completion),
                 loadMixingInspectionChart(dashboardPeriods.inspection),
-                loadBlendingByPowderChart(dashboardPeriods.byPowder)
+                loadBlendingByPowderChart(dashboardPeriods.byPowder),
+                loadNgInspections()
             ]);
             updateKpiColors();
             const now = new Date();
@@ -5934,7 +5943,8 @@ function t(key) {
                     await Promise.all([
                         loadBlendingCompletionChart(dashboardPeriods.completion),
                         loadMixingInspectionChart(dashboardPeriods.inspection),
-                        loadBlendingByPowderChart(dashboardPeriods.byPowder)
+                        loadBlendingByPowderChart(dashboardPeriods.byPowder),
+                        loadNgInspections()
                     ]);
                     updateKpiColors();
                     const now = new Date();
@@ -5942,6 +5952,123 @@ function t(key) {
                     if (el) el.textContent = now.toTimeString().slice(0, 8);
                 }
             }, 60000);
+        }
+
+        // NG 현황 로드
+        async function loadNgInspections() {
+            const container = document.getElementById('chartNgStatus');
+            if (!container) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/dashboard/ng-inspections`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.message);
+
+                const ngList   = data.ng_list   || [];
+                const passList = data.recent_pass || [];
+                const allRows  = [...ngList, ...passList];
+
+                const badge = document.getElementById('ngSummaryBadge');
+                if (badge) {
+                    const pending = ngList.filter(r => r.status === 'NG확정').length;
+                    const inprog  = ngList.filter(r => r.status === '재검사진행중').length;
+                    badge.textContent =
+                        `미처리 ${pending}건${inprog ? ' / 재검사중 ' + inprog + '건' : ''}${passList.length ? ' / 재검사합격 ' + passList.length + '건' : ''}`;
+                }
+
+                if (allRows.length === 0) {
+                    container.innerHTML = '<div style="color:#4CAF50; text-align:center; padding:40px 0; font-size:0.95em;">✓ NG 항목 없음</div>';
+                    return;
+                }
+
+                const statusStyle = {
+                    'NG확정':     'background:#C62828; color:#fff;',
+                    '재검사진행중': 'background:#F07D00; color:#fff;',
+                    '재검사합격':  'background:#2E7D32; color:#fff;'
+                };
+
+                let html = `<table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+                    <thead><tr style="background:#2A2A2A; color:#A0A0A0;">
+                        <th style="padding:8px 10px; text-align:left;">분말</th>
+                        <th style="padding:8px 10px; text-align:left;">LOT</th>
+                        <th style="padding:8px 10px; text-align:center;">검사일</th>
+                        <th style="padding:8px 10px; text-align:center;">경과</th>
+                        <th style="padding:8px 10px; text-align:left;">NG 항목</th>
+                        <th style="padding:8px 10px; text-align:center;">상태</th>
+                        <th style="padding:8px 10px; text-align:center;">액션</th>
+                    </tr></thead><tbody>`;
+
+                allRows.forEach(row => {
+                    const days    = row.days_elapsed != null ? `${row.days_elapsed}일` : '-';
+                    const dayColor = row.days_elapsed > 7 ? '#EF5350' : row.days_elapsed > 3 ? '#FFA726' : '#A0A0A0';
+                    const items   = (row.failed_items || []).join(', ') || '-';
+                    const st      = row.status;
+                    const stStyle = statusStyle[st] || '';
+                    const round   = row.current_round > 1 ? ` (${row.current_round}차)` : '';
+                    const actionBtn = st === 'NG확정'
+                        ? `<button class="btn secondary" style="padding:3px 10px; font-size:0.8em;"
+                             onclick="openRetestModal('${row.powder_name}','${row.lot_number}')">재검사</button>`
+                        : '-';
+                    html += `<tr style="border-bottom:1px solid #2A2A2A;">
+                        <td style="padding:8px 10px; font-weight:600;">${row.powder_name}</td>
+                        <td style="padding:8px 10px; color:#A0A0A0;">${row.lot_number}</td>
+                        <td style="padding:8px 10px; text-align:center; color:#A0A0A0;">${row.inspection_date || '-'}</td>
+                        <td style="padding:8px 10px; text-align:center; color:${dayColor}; font-weight:600;">${days}</td>
+                        <td style="padding:8px 10px; color:#EF9A9A;">${items}</td>
+                        <td style="padding:8px 10px; text-align:center;">
+                            <span style="padding:2px 8px; border-radius:4px; font-size:0.8em; font-weight:600; ${stStyle}">${st}${round}</span>
+                        </td>
+                        <td style="padding:8px 10px; text-align:center;">${actionBtn}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = `<div style="color:#EF9A9A; text-align:center; padding:20px;">${e.message}</div>`;
+            }
+        }
+
+        // 재검사 요청 모달
+        let retestTarget = { powderName: '', lotNumber: '' };
+
+        function openRetestModal(powderName, lotNumber) {
+            retestTarget = { powderName, lotNumber };
+            const label = document.getElementById('retestTargetLabel');
+            if (label) label.textContent = `${powderName} / LOT: ${lotNumber}`;
+            const ta = document.getElementById('retestReason');
+            if (ta) ta.value = '';
+            const modal = document.getElementById('retestModal');
+            if (modal) modal.style.display = 'flex';
+        }
+
+        function closeRetestModal() {
+            const modal = document.getElementById('retestModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function submitRetestRequest() {
+            const reason = (document.getElementById('retestReason')?.value || '').trim();
+            if (!reason) { alert('재검사 사유를 입력하세요.'); return; }
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/retest/request`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        powderName: retestTarget.powderName,
+                        lotNumber:  retestTarget.lotNumber,
+                        reason
+                    })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert('요청 실패: ' + data.message); return; }
+
+                closeRetestModal();
+                alert(`✓ 재검사 요청 완료 (${data.nextRound}차 검사)\n\n수입검사 화면에서 동일 분말/LOT를 입력하여 재검사를 시작하세요.`);
+                await loadNgInspections();
+            } catch (e) {
+                alert('오류: ' + e.message);
+            }
         }
 
         // KPI 카드 로드

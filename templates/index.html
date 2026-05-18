@@ -200,14 +200,14 @@
                     <div id="chartBlendingByPowder" class="chart-container"></div>
                 </div>
 
-                <!-- 우하: 검사 NG 현황 (추후 구현) -->
+                <!-- 우하: 검사 NG 현황 -->
                 <div class="dashboard-chart-card">
                     <div class="chart-card-header">
                         <span class="chart-card-title">검사 NG 현황</span>
+                        <span id="ngSummaryBadge" style="font-size:0.82em; color:#A0A0A0;"></span>
                     </div>
-                    <div id="chartNgStatus" class="chart-container"
-                         style="display:flex;align-items:center;justify-content:center;">
-                        <span style="color:#555;font-size:0.95em;">추후 구현 예정</span>
+                    <div id="chartNgStatus" style="overflow-y:auto; max-height:260px; padding:4px 0;">
+                        <div style="color:#555; font-size:0.95em; text-align:center; padding:40px 0;">불러오는 중...</div>
                     </div>
                 </div>
             </div>
@@ -324,6 +324,21 @@
             </div><!-- /incomingTabBotContent -->
 
         </div><!-- /incoming page -->
+
+        <!-- 재검사 요청 모달 -->
+        <div id="retestModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9500; align-items:center; justify-content:center;">
+            <div style="background:#1E1E1E; border-radius:10px; padding:28px; width:92vw; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                <h3 style="margin:0 0 6px 0; color:#E8E8E8;">🔄 재검사 요청</h3>
+                <p id="retestTargetLabel" style="margin:0 0 20px 0; color:#A0A0A0; font-size:0.9em;"></p>
+                <label style="display:block; color:#A0A0A0; font-size:0.85em; margin-bottom:6px;">재검사 사유 <span style="color:#EF5350;">*</span></label>
+                <textarea id="retestReason" rows="3" placeholder="재검사 사유를 입력하세요 (공급업체 재확인, 측정 오류 등)"
+                    style="width:100%; padding:10px; background:#2C2C2C; border:1px solid #444; border-radius:6px; color:#E8E8E8; font-size:0.95em; resize:vertical; box-sizing:border-box;"></textarea>
+                <div style="display:flex; gap:12px; margin-top:18px; justify-content:flex-end;">
+                    <button class="btn secondary" onclick="closeRetestModal()" style="padding:10px 22px;">취소</button>
+                    <button class="btn" onclick="submitRetestRequest()" style="padding:10px 22px; background:#F07D00;">재검사 요청</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Bot LOT 등록 모달 -->
         <div id="botRegisterModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9000; align-items:flex-start; justify-content:center; overflow-y:auto; padding:20px 0;">

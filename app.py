@@ -1751,11 +1751,36 @@ def update_final_result(powder_name, lot_number, conn=None):
                 return
 
         # 모든 필수 항목이 완료되었을 때만 최종 결과 판정
+        col_label_map = {
+            'flow_rate_result': '유동도', 'apparent_density_result': '겉보기밀도',
+            'c_content_result': '탄소함량', 'cu_content_result': '구리함량',
+            'moisture_result': '수분', 'ash_result': '회분',
+            'sinter_change_rate_result': '소결치수변화율', 'sinter_strength_result': '소결강도',
+            'forming_strength_result': '성형강도', 'forming_load_result': '성형하중',
+            'particle_size_result': '입도분석',
+        }
         final_result = 'PASS'
+        failed_items = []
         for col in required_result_columns:
             if result_data.get(col) == 'FAIL':
                 final_result = 'FAIL'
-                break
+                failed_items.append(col_label_map.get(col, col))
+
+        # 현재 검사 회차 조회
+        current_round = result_data.get('current_round') or 1
+
+        # 검사 이력 기록 (PASS/FAIL 모두)
+        cursor.execute('''
+            INSERT INTO inspection_history
+                (powder_name, lot_number, round, inspector, inspection_date, category, final_result, failed_items)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            powder_name, lot_number, current_round,
+            result_data.get('inspector'), result_data.get('inspection_date'),
+            result_data.get('category', 'incoming'),
+            final_result,
+            json.dumps(failed_items, ensure_ascii=False)
+        ))
 
         # Millsheet 파일 존재 시 경로도 함께 저장
         sp = safe_name(powder_name)
@@ -1775,7 +1800,7 @@ def update_final_result(powder_name, lot_number, conn=None):
                 WHERE powder_name = ? AND lot_number = ?
             ''', (final_result, powder_name, lot_number))
 
-        print(f"[DEBUG] {powder_name} {lot_number}: final_result = {final_result} 설정 완료")
+        print(f"[DEBUG] {powder_name} {lot_number}: final_result = {final_result} (round={current_round}) 설정 완료")
 
         # 연결을 직접 생성한 경우에만 커밋
         if owns_connection:
@@ -2486,6 +2511,45 @@ def ensure_bot_registered_table():
         conn.commit()
 
 ensure_bot_registered_table()
+
+
+def ensure_inspection_history_table():
+    """검사 이력 테이블 생성 (재검사 이력 관리)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS inspection_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                powder_name TEXT NOT NULL,
+                lot_number  TEXT NOT NULL,
+                round       INTEGER DEFAULT 1,
+                inspector   TEXT,
+                inspection_date DATE,
+                category    TEXT DEFAULT 'incoming',
+                final_result TEXT,
+                failed_items TEXT,
+                retest_reason TEXT,
+                recorded_at TIMESTAMP DEFAULT (datetime('now','localtime'))
+            )
+        ''')
+        conn.commit()
+
+
+def ensure_retest_columns():
+    """inspection_result에 재검사 관련 컬럼 추가"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(inspection_result)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if 'current_round' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN current_round INTEGER DEFAULT 1')
+        if 'retest_reason' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN retest_reason TEXT')
+        conn.commit()
+
+
+ensure_inspection_history_table()
+ensure_retest_columns()
 
 # ---------------------------------------------------------------------------
 # Millsheet 업로드 API
@@ -4781,6 +4845,137 @@ def save_bot_settings():
                 cursor.execute('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', (key, val))
             conn.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+# ============================================================
+# 재검사 요청 API
+# ============================================================
+
+@app.route('/api/retest/request', methods=['POST'])
+def retest_request():
+    """NG 판정 후 재검사 요청: 현재 결과를 이력에 보존하고 재검사 준비"""
+    try:
+        data        = request.get_json()
+        powder_name = data.get('powderName')
+        lot_number  = data.get('lotNumber')
+        reason      = data.get('reason', '').strip()
+
+        if not all([powder_name, lot_number, reason]):
+            return jsonify({'success': False, 'message': '분말명, LOT번호, 재검사 사유는 필수입니다.'})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+
+            # 현재 검사 결과 확인
+            cursor.execute('''
+                SELECT final_result, current_round, inspector, inspection_date, category
+                FROM inspection_result
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (powder_name, lot_number))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': '검사 결과를 찾을 수 없습니다.'})
+
+            row = dict_from_row(row)
+            if row['final_result'] != 'FAIL':
+                return jsonify({'success': False, 'message': 'NG(FAIL) 결과만 재검사 요청할 수 있습니다.'})
+
+            current_round = row.get('current_round') or 1
+            next_round    = current_round + 1
+
+            # 재검사 이력에 사유 기록
+            cursor.execute('''
+                UPDATE inspection_history
+                SET retest_reason = ?
+                WHERE powder_name = ? AND lot_number = ? AND round = ?
+            ''', (reason, powder_name, lot_number, current_round))
+
+            # inspection_result: final_result 초기화(재검사 가능하도록), 회차 증가, 사유 저장
+            cursor.execute('''
+                UPDATE inspection_result
+                SET final_result = NULL, current_round = ?, retest_reason = ?
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (next_round, reason, powder_name, lot_number))
+
+            # 기존 진행중 검사 삭제 (clean slate)
+            cursor.execute('''
+                DELETE FROM inspection_progress
+                WHERE powder_name = ? AND lot_number = ?
+            ''', (powder_name, lot_number))
+
+            conn.commit()
+
+        return jsonify({'success': True, 'nextRound': next_round})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+# ============================================================
+# 대시보드: 검사 NG 현황 API
+# ============================================================
+
+@app.route('/api/dashboard/ng-inspections', methods=['GET'])
+def dashboard_ng_inspections():
+    """NG 분말 현황 + 최근 7일 재검사 합격 현황"""
+    try:
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+
+            # 1. 현재 FAIL 목록 (처리 필요)
+            cursor.execute('''
+                SELECT ir.powder_name, ir.lot_number, ir.inspector,
+                       ir.inspection_date, ir.final_result, ir.current_round,
+                       ir.retest_reason, ir.category,
+                       CAST(julianday('now','localtime') - julianday(COALESCE(ir.inspection_date, date('now','localtime'))) AS INTEGER) AS days_elapsed
+                FROM inspection_result ir
+                WHERE ir.final_result = 'FAIL'
+                  AND (ir.is_hidden IS NULL OR ir.is_hidden = 0)
+                ORDER BY ir.inspection_date DESC
+            ''')
+            fail_rows = [dict_from_row(r) for r in cursor.fetchall()]
+
+            # 재검사 진행중 여부 확인
+            for row in fail_rows:
+                cursor.execute('''
+                    SELECT id FROM inspection_progress
+                    WHERE powder_name = ? AND lot_number = ?
+                ''', (row['powder_name'], row['lot_number']))
+                row['status'] = '재검사진행중' if cursor.fetchone() else 'NG확정'
+
+                # 최근 history에서 failed_items 조회
+                cursor.execute('''
+                    SELECT failed_items FROM inspection_history
+                    WHERE powder_name = ? AND lot_number = ?
+                    ORDER BY round DESC LIMIT 1
+                ''', (row['powder_name'], row['lot_number']))
+                hist = cursor.fetchone()
+                row['failed_items'] = json.loads(hist[0]) if hist and hist[0] else []
+
+            # 2. 최근 7일 재검사 합격 목록 (current_round > 1, PASS)
+            cursor.execute('''
+                SELECT ir.powder_name, ir.lot_number, ir.inspector,
+                       ir.inspection_date, ir.final_result, ir.current_round,
+                       ir.category,
+                       CAST(julianday('now','localtime') - julianday(COALESCE(ir.inspection_date, date('now','localtime'))) AS INTEGER) AS days_elapsed
+                FROM inspection_result ir
+                WHERE ir.final_result = 'PASS'
+                  AND ir.current_round > 1
+                  AND (ir.is_hidden IS NULL OR ir.is_hidden = 0)
+                  AND julianday('now','localtime') - julianday(COALESCE(ir.inspection_date, date('now','localtime'))) <= 7
+                ORDER BY ir.inspection_date DESC
+            ''')
+            pass_rows = [dict_from_row(r) for r in cursor.fetchall()]
+            for row in pass_rows:
+                row['status'] = '재검사합격'
+                row['failed_items'] = []
+
+        return jsonify({
+            'success': True,
+            'ng_list': fail_rows,
+            'recent_pass': pass_rows
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
