@@ -7336,6 +7336,8 @@ function t(key) {
             try {
                 // LOT별로 별도 레코드 저장 → 추적성에서 개별 투입량 표시 가능
                 // (같은 LOT를 2번 입력한 경우 추적성 조회 시 그룹핑으로 합산)
+                // 다중 LOT 분할 시 개별 중량이 전체 목표와 다르므로 백엔드 중량 검증은 건너뜀
+                const isMultiLot = lots.length > 1;
                 for (const lot of lots) {
                     const response = await fetch(`${API_BASE}/api/blending/material-input`, {
                         method: 'POST',
@@ -7349,7 +7351,8 @@ function t(key) {
                             actual_weight: parseFloat(lot.weight.toFixed(3)),
                             tolerance_minus: toleranceMinus,
                             tolerance_plus: tolerancePlus,
-                            operator: currentAutoInputWork.operator
+                            operator: currentAutoInputWork.operator,
+                            skip_weight_validation: isMultiLot
                         })
                     });
                     const data = await response.json();

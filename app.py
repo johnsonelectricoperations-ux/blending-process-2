@@ -3239,11 +3239,13 @@ def save_material_input():
             weight_deviation = round(weight_deviation, 2)
 
             # 3. 허용 오차 확인 (g 절대값 기준)
+            # 다중 LOT 분할 입력 시 개별 중량이 전체 목표보다 작으므로 프론트 판정을 신뢰하고 건너뜀
+            skip_weight_validation = bool(data.get('skip_weight_validation', False))
             tolerance_minus = float(data.get('tolerance_minus', 5))
             tolerance_plus = float(data.get('tolerance_plus', 5))
             min_allowed = target_weight - tolerance_minus / 1000  # g → kg
             max_allowed = target_weight + tolerance_plus / 1000  # g → kg
-            is_valid = min_allowed <= actual_weight <= max_allowed
+            is_valid = skip_weight_validation or (min_allowed <= actual_weight <= max_allowed)
 
             validation_message = None
             if not is_valid:
