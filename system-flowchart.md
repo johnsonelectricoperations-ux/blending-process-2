@@ -46,15 +46,7 @@ flowchart TD
     C --> G{규격 대비 자동 판정}:::decision
 
     G -->|PASS| H[수입검사 합격\n배합 투입 가능]:::passNode
-    G -->|FAIL| I[수입검사 불합격 NG]:::failNode
-
-    I --> I1{재검사 요청?}:::decision
-    I1 -->|예| I2[재검사 요청 등록\n사유 입력]:::process
-    I2 --> I3[재검사 수행\n2차 측정값 입력]:::process
-    I3 --> I4{재검사 판정}:::decision
-    I4 -->|PASS| H
-    I4 -->|FAIL| I5[최종 NG 확정\n대시보드 NG현황 반영]:::failNode
-    I1 -->|아니오| I5
+    G -->|FAIL| I5[수입검사 불합격 NG\n대시보드 NG현황 반영]:::failNode
 
     %% ════════════════════════════════════════════════════════
     %% 2. 배합작업
