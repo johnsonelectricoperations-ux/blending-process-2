@@ -83,8 +83,7 @@ flowchart TD
     %% ════════════════════════════════════════════════════════
     W1 --> X[배합분말 검사 시작\n배합 LOT 선택]:::process
     W2 --> X
-    X --> Y[항목별 측정값 입력\n수입검사와 동일 11종]:::process
-    Y --> Z{규격 대비 자동 판정}:::decision
+    X --> Z{규격 대비 자동 판정}:::decision
 
     Z -->|PASS| AA[배합분말 합격\n출하 가능]:::passNode
     Z -->|FAIL| AB[배합분말 불합격 NG]:::failNode
