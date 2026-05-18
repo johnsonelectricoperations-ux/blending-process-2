@@ -5516,7 +5516,7 @@ function t(key) {
                         </div>
                     </div>
                 </div>
-                ${renderInspectionHistoryBlock(inspection)}
+                ${renderInspectionBlock(inspection)}
 
                 <div class="card" style="margin-top: 20px;">
                     <h3 style="margin: 0 0 15px 0;">🏭 ${t('usageHistory')}</h3>
