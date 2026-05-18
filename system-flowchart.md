@@ -8,6 +8,7 @@ flowchart TD
     classDef passNode  fill:#1B5E20,stroke:#4CAF50,color:#fff
     classDef failNode  fill:#B71C1C,stroke:#EF5350,color:#fff
     classDef adminNode fill:#1A237E,stroke:#42A5F5,color:#fff
+    classDef labelNode fill:#4A148C,stroke:#CE93D8,color:#fff
 
     %% ════════════════════════════════════════════════════════
     %% 0. 관리자 초기 설정 (시스템 사용 전 선행 필수)
@@ -42,7 +43,7 @@ flowchart TD
     F --> G{규격 대비 자동 판정}:::decision
 
     G -->|PASS| H[수입검사 합격\n배합 투입 가능]:::passNode
-    G -->|FAIL| I[수입검사 불합격\nNG 확정]:::failNode
+    G -->|FAIL| I[수입검사 불합격 NG]:::failNode
 
     I --> I1{재검사 요청?}:::decision
     I1 -->|예| I2[재검사 요청 등록\n사유 입력]:::process
@@ -75,17 +76,28 @@ flowchart TD
     T --> U{다음 원재료\n있음?}:::decision
     U -->|예| M
     U -->|아니오| V[전체 투입 완료\n배합작업 완료 처리]:::process
-    V --> W[배합 라벨 출력\nQR코드 포함 150×100mm]:::process
+
+    V --> W1[라벨 ① 출력\n배합분말 원재료 용기 부착\nQR코드 포함 150×100mm]:::labelNode
+    V --> W2[라벨 ② 출력\n배합분말 Sampling 통 부착\nQR코드 포함 150×100mm]:::labelNode
 
     %% ════════════════════════════════════════════════════════
     %% 3. 배합분말 검사
     %% ════════════════════════════════════════════════════════
-    W --> X[배합분말 검사 시작\n배합 LOT 선택]:::process
+    W1 --> X[배합분말 검사 시작\n배합 LOT 선택]:::process
+    W2 --> X
     X --> Y[항목별 측정값 입력\n수입검사와 동일 11종]:::process
     Y --> Z{규격 대비 자동 판정}:::decision
 
     Z -->|PASS| AA[배합분말 합격\n출하 가능]:::passNode
-    Z -->|FAIL| AB[배합분말 불합격\nNG 확정 · 재검사 요청 가능]:::failNode
+    Z -->|FAIL| AB[배합분말 불합격 NG]:::failNode
+
+    AB --> AB1{재검사 요청?}:::decision
+    AB1 -->|예| AB2[재검사 요청 등록\n사유 입력]:::process
+    AB2 --> AB3[재검사 수행\n2차 측정값 입력]:::process
+    AB3 --> AB4{재검사 판정}:::decision
+    AB4 -->|PASS| AA
+    AB4 -->|FAIL| AB5[최종 NG 확정\n대시보드 NG현황 반영]:::failNode
+    AB1 -->|아니오| AB5
 
     %% ════════════════════════════════════════════════════════
     %% 4. 추적성 조회
@@ -102,6 +114,6 @@ flowchart TD
     %% ════════════════════════════════════════════════════════
     AE --> AH([📊 대시보드 모니터링\nKPI · NG현황 · 일별트렌드 · 합격률]):::startEnd
     AG --> AH
-    AB --> AH
+    AB5 --> AH
     I5 --> AH
 ```
