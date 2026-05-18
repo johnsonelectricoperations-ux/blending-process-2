@@ -2055,6 +2055,13 @@ function t(key) {
             } else {
                 html += '</div></div>';
             }
+
+            // 재검사 이력 블록
+            const histHtml = renderInspectionHistoryBlock(detail);
+            if (histHtml) {
+                html += `<div class="card" style="margin-top:16px;"><div class="card-title">재검사 이력</div>${histHtml}</div>`;
+            }
+
             container.innerHTML = html;
         }
 

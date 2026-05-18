@@ -1003,6 +1003,16 @@ def get_inspection_detail(powder_name, lot_number):
             if particle_specs:
                 result['particleSizeSpecs'] = particle_specs
 
+            # 재검사 이력 추가
+            cursor.execute('''
+                SELECT round, inspector, inspection_date, final_result,
+                       failed_items, retest_reason, recorded_at
+                FROM inspection_history
+                WHERE powder_name = ? AND lot_number = ?
+                ORDER BY round ASC
+            ''', (powder_name, lot_number))
+            result['inspection_histories'] = [dict_from_row(h) for h in cursor.fetchall()]
+
             # 시간 필드 KST 변환
             convert_times_in_dict(result)
 
