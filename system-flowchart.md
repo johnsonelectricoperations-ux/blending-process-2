@@ -20,7 +20,7 @@ flowchart TD
     ADM2 --> ADM3[레시피 등록\n제품별 배합비율 · 허용오차]:::adminNode
     ADM3 --> ADM4[검사자 · 작업자 등록]:::adminNode
     ADM4 --> ADM5[사용자 계정 · 메뉴 권한 설정]:::adminNode
-    ADM5 --> ADM6[Bot 설정\nGoogle Sheets ID · Drive API Key]:::adminNode
+    ADM5 --> ADM6[Auto Email Bot 설정\nSheets ID · Drive API Key]:::adminNode
 
     ADM6 --> OP([⚙️ 운영 시작]):::startEnd
 
@@ -30,9 +30,9 @@ flowchart TD
     OP --> B{입고 방식}:::decision
 
     B -->|수동 입력| C[수입검사 등록\n분말명 · LOT번호 · 검사자 입력]:::process
-    B -->|Bot 자동| D[Gmail Bot 자동 수신\nWhitelist 발신자 메일 감지]:::process
+    B -->|Bot 자동| D[Auto Email Bot 수신\nWhitelist 발신자 메일 감지]:::process
 
-    D --> D1[Google Drive에 PDF 저장\nMailLog Sheets에 기록]:::process
+    D --> D1[Drive에 PDF 저장\nMailLog Sheets에 기록]:::process
     D1 --> D2[시스템에서 Bot 목록 불러오기]:::process
     D2 --> D3{처리 방법}:::decision
     D3 -->|등록| C
@@ -78,7 +78,7 @@ flowchart TD
     U -->|아니오| V[전체 투입 완료\n배합작업 완료 처리]:::process
 
     V --> W1[라벨 ① 출력\n배합분말 원재료 용기 부착\nQR코드 포함 150×100mm]:::labelNode
-    V --> W2[라벨 ② 출력\n배합분말 Sampling 통 부착\nQR코드 포함 150×100mm]:::labelNode
+    V --> W2[라벨 ② 출력\n배합분말 Sampling 통 부착\nQR코드 포함 40×30mm]:::labelNode
 
     %% ════════════════════════════════════════════════════════
     %% 3. 배합분말 검사
