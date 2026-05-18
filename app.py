@@ -3540,7 +3540,7 @@ def trace_by_batch_lot(batch_lot):
                         )
             material_inputs = list(grouped.values())
 
-            # 3. 각 원재료의 수입검사 결과 조회 (LOT가 쉼표로 합쳐진 경우 분리하여 각각 조회)
+            # 3. 각 원재료의 수입검사 결과 조회 + 재검사 이력
             for material in material_inputs:
                 lot_numbers = list(dict.fromkeys(
                     [l.strip() for l in material['material_lot'].split(',') if l.strip()]
@@ -3550,13 +3550,23 @@ def trace_by_batch_lot(batch_lot):
                 for lot_num in lot_numbers:
                     cursor.execute('''
                         SELECT powder_name, lot_number, inspection_type, inspector,
-                               inspection_time, final_result
+                               inspection_time, final_result, current_round, retest_reason
                         FROM inspection_result
                         WHERE lot_number = ? AND powder_name = ? AND category = 'incoming'
                     ''', (lot_num, material['powder_name']))
                     row = cursor.fetchone()
                     if row:
-                        inspections.append(dict_from_row(row))
+                        insp = dict_from_row(row)
+                        # 재검사 이력 조회
+                        cursor.execute('''
+                            SELECT round, inspector, inspection_date, final_result,
+                                   failed_items, retest_reason, recorded_at
+                            FROM inspection_history
+                            WHERE powder_name = ? AND lot_number = ?
+                            ORDER BY round ASC
+                        ''', (lot_num, material['powder_name']))
+                        insp['inspection_histories'] = [dict_from_row(h) for h in cursor.fetchall()]
+                        inspections.append(insp)
 
                 material['incoming_inspection'] = inspections[0] if inspections else None
                 material['incoming_inspections'] = inspections
@@ -3608,6 +3618,16 @@ def trace_by_material_lot(material_lot):
                     })
 
             inspection = dict_from_row(inspection_row)
+
+            # 재검사 이력 조회
+            cursor.execute('''
+                SELECT round, inspector, inspection_date, final_result,
+                       failed_items, retest_reason, recorded_at
+                FROM inspection_history
+                WHERE powder_name = ? AND lot_number = ?
+                ORDER BY round ASC
+            ''', (inspection['powder_name'], material_lot))
+            inspection['inspection_histories'] = [dict_from_row(h) for h in cursor.fetchall()]
 
             # inspection에서 powder_name 가져오기 (빈 문자열인 경우 대비)
             actual_powder_name = inspection['powder_name']

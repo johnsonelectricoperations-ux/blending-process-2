@@ -5358,27 +5358,7 @@ function t(key) {
                             if (inspections.length === 0) {
                                 return '<p style="color: #EF5350;">⚠️ 수입검사 기록 없음</p>';
                             }
-                            return inspections.map(insp => `
-                                <div style="background: rgba(66, 165, 245, 0.1); padding: 15px; border-radius: 5px; border-left: 4px solid #F07D00; margin-bottom: 8px;">
-                                    <h5 style="margin: 0 0 10px 0; color: #1976D2;">✓ ${t('incomingInspection')}${inspections.length > 1 ? ' — LOT: ' + insp.lot_number : ''}</h5>
-                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                                        <div>
-                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspector')}</p>
-                                            <p style="font-weight: 600; font-size: 0.95em;">${insp.inspector}</p>
-                                        </div>
-                                        <div>
-                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('inspectionTime')}</p>
-                                            <p style="font-weight: 600; font-size: 0.95em;">${insp.inspection_time}</p>
-                                        </div>
-                                        <div>
-                                            <p style="color: #A0A0A0; margin-bottom: 3px; font-size: 0.85em;">${t('finalResult')}</p>
-                                            <p style="font-weight: 600; font-size: 0.95em;">
-                                                <span class="badge ${insp.final_result === 'PASS' ? 'pass' : 'fail'}">${insp.final_result}</span>
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            `).join('');
+                            return inspections.map(insp => renderInspectionBlock(insp, inspections.length > 1)).join('');
                         })()}
                     </div>
                 `;
@@ -5386,6 +5366,59 @@ function t(key) {
 
             html += '</div>';
             container.innerHTML = html;
+        }
+
+        // 수입검사 결과 블록 렌더 (회차 + 재검사 이력 포함)
+        function renderInspectionBlock(insp, showLot = false) {
+            const round     = insp.current_round || 1;
+            const roundTag  = round > 1 ? `<span style="background:#F07D00;color:#fff;padding:1px 7px;border-radius:4px;font-size:0.75em;margin-left:6px;">${round}차 검사</span>` : '';
+            const lotTag    = showLot ? ` — LOT: ${insp.lot_number}` : '';
+            const borderColor = insp.final_result === 'PASS' ? '#4CAF50' : '#EF5350';
+            const histBlock = renderInspectionHistoryBlock(insp);
+            return `
+                <div style="background:rgba(66,165,245,0.07); padding:14px; border-radius:6px; border-left:4px solid ${borderColor}; margin-bottom:8px;">
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+                        <span style="font-weight:700; color:#E8E8E8;">${t('incomingInspection')}${lotTag}</span>
+                        ${roundTag}
+                        <span class="badge ${insp.final_result === 'PASS' ? 'pass' : 'fail'}" style="margin-left:auto;">${insp.final_result || '-'}</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+                        <div><p style="color:#A0A0A0;font-size:0.82em;margin-bottom:2px;">${t('inspector')}</p><p style="font-weight:600;font-size:0.92em;">${insp.inspector || '-'}</p></div>
+                        <div><p style="color:#A0A0A0;font-size:0.82em;margin-bottom:2px;">${t('inspectionTime')}</p><p style="font-weight:600;font-size:0.92em;">${insp.inspection_time || '-'}</p></div>
+                        <div><p style="color:#A0A0A0;font-size:0.82em;margin-bottom:2px;">검사 유형</p><p style="font-weight:600;font-size:0.92em;">${insp.inspection_type || '-'}</p></div>
+                    </div>
+                    ${histBlock}
+                </div>`;
+        }
+
+        // 재검사 이력 블록 (inspection_histories 배열이 있을 때 표시)
+        function renderInspectionHistoryBlock(insp) {
+            const hists = insp.inspection_histories || [];
+            if (hists.length === 0) return '';
+            const rows = hists.map(h => {
+                const failed = (() => { try { return JSON.parse(h.failed_items || '[]').join(', ') || '-'; } catch { return '-'; } })();
+                const rc = h.final_result === 'PASS' ? '#4CAF50' : '#EF5350';
+                return `<tr style="border-bottom:1px solid #333;">
+                    <td style="padding:5px 8px; text-align:center;">${h.round}차</td>
+                    <td style="padding:5px 8px;">${h.inspection_date || '-'}</td>
+                    <td style="padding:5px 8px;">${h.inspector || '-'}</td>
+                    <td style="padding:5px 8px; color:#EF9A9A; font-size:0.88em;">${failed}</td>
+                    <td style="padding:5px 8px;"><span style="color:${rc}; font-weight:700;">${h.final_result || '-'}</span></td>
+                    <td style="padding:5px 8px; color:#A0A0A0; font-size:0.82em;">${h.retest_reason || ''}</td>
+                </tr>`;
+            }).join('');
+            return `
+                <div style="margin-top:12px; border-top:1px solid #333; padding-top:10px;">
+                    <p style="font-size:0.82em; color:#A0A0A0; margin-bottom:6px;">🔄 검사 이력</p>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.82em;">
+                        <thead><tr style="color:#777;">
+                            <th style="padding:4px 8px;">회차</th><th style="padding:4px 8px;">검사일</th>
+                            <th style="padding:4px 8px;">검사자</th><th style="padding:4px 8px;">NG 항목</th>
+                            <th style="padding:4px 8px;">결과</th><th style="padding:4px 8px;">재검사 사유</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
         }
 
         function renderForwardTrace(data) {
@@ -5415,11 +5448,14 @@ function t(key) {
                             <p style="font-size: 1.2em; font-weight: 600;">${inspection.inspection_time}</p>
                         </div>
                     </div>
-                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.3);">
-                        <p style="opacity: 0.9; margin-bottom: 5px;">${t('finalResult')}</p>
-                        <p style="font-size: 1.3em; font-weight: 600;">${inspectionBadge}</p>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.3); display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+                        <div>
+                            <p style="opacity: 0.9; margin-bottom: 5px;">${t('finalResult')}</p>
+                            <p style="font-size: 1.3em; font-weight: 600;">${inspectionBadge}${inspection.current_round > 1 ? `<span style="font-size:0.75em; opacity:0.8; margin-left:8px;">(${inspection.current_round}차 검사)</span>` : ''}</p>
+                        </div>
                     </div>
                 </div>
+                ${renderInspectionHistoryBlock(inspection)}
 
                 <div class="card" style="margin-top: 20px;">
                     <h3 style="margin: 0 0 15px 0;">🏭 ${t('usageHistory')}</h3>
