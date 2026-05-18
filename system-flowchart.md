@@ -113,4 +113,20 @@ flowchart TD
     AG --> AH
     AB5 --> AH
     I5 --> AH
+
+    %% ════════════════════════════════════════════════════════
+    %% 6. DB 저장 목록
+    %% ════════════════════════════════════════════════════════
+    AH --> DB([🗄️ DB 저장 목록]):::startEnd
+
+    DB --> DB1[(powder_spec\n분말별 검사 규격\nMin/Max 기준값)]:::adminNode
+    DB --> DB2[(recipe\n제품별 배합 레시피\n배합비율 · 허용오차)]:::adminNode
+    DB --> DB3[(inspector / operator\n검사자 · 작업자 목록)]:::adminNode
+    DB --> DB4[(inspection_result\n수입검사 완료 기록\nLOT · 측정값 · 판정)]:::process
+    DB --> DB5[(inspection_history\n재검사 회차별 이력\n사유 · 불합격 항목)]:::process
+    DB --> DB6[(particle_size\n입도분석 규격\nMesh별 Min/Max)]:::adminNode
+    DB --> DB7[(bot_registered\nBot 등록 · 무시 이력\nDriveFileId 기준)]:::process
+    DB --> DB8[(blending_order\n작업지시 목록\n제품명 · 목표중량)]:::process
+    DB --> DB9[(blending_work\n배합작업 실적\n배합LOT · 실투입 총량)]:::process
+    DB --> DB10[(material_input\n원재료 투입 실적\nLOT별 투입중량 · 편차)]:::process
 ```
