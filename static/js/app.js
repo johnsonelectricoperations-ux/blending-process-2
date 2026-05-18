@@ -7095,29 +7095,29 @@ function t(key) {
             }
 
             try {
-                // 복수 LOT를 하나의 레코드로 저장 (LOT는 쉼표로 구분)
-                const lotNumbers = lots.map(lot => lot.lotNumber).join(',');
-
-                const response = await fetch(`${API_BASE}/api/blending/material-input`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        blending_work_id: currentAutoInputWorkId,
-                        powder_name: powderName,
-                        powder_category: isMain ? 'main' : 'sub',
-                        material_lot: lotNumbers,
-                        target_weight: calculatedWeight,
-                        actual_weight: parseFloat(totalWeight.toFixed(3)), // 소수점 3자리 (0.001kg = 1g)
-                        tolerance_minus: toleranceMinus,
-                        tolerance_plus: tolerancePlus,
-                        operator: currentAutoInputWork.operator
-                    })
-                });
-
-                const data = await response.json();
-                if (!data.success) {
-                    alert(`저장 실패: ${data.message}`);
-                    return;
+                // LOT별로 별도 레코드 저장 → 추적성에서 개별 투입량 표시 가능
+                // (같은 LOT를 2번 입력한 경우 추적성 조회 시 그룹핑으로 합산)
+                for (const lot of lots) {
+                    const response = await fetch(`${API_BASE}/api/blending/material-input`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            blending_work_id: currentAutoInputWorkId,
+                            powder_name: powderName,
+                            powder_category: isMain ? 'main' : 'sub',
+                            material_lot: lot.lotNumber,
+                            target_weight: calculatedWeight,
+                            actual_weight: parseFloat(lot.weight.toFixed(3)),
+                            tolerance_minus: toleranceMinus,
+                            tolerance_plus: tolerancePlus,
+                            operator: currentAutoInputWork.operator
+                        })
+                    });
+                    const data = await response.json();
+                    if (!data.success) {
+                        alert(`저장 실패 (LOT: ${lot.lotNumber}): ${data.message}`);
+                        return;
+                    }
                 }
 
                 alert(`✓ ${powderName} 투입이 기록되었습니다.`);

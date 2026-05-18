@@ -3445,19 +3445,29 @@ def trace_by_batch_lot(batch_lot):
 
             raw_inputs = [dict_from_row(row) for row in cursor.fetchall()]
 
-            # 같은 분말+같은 LOT가 분할 투입된 경우 중량 합산하여 1건으로 그룹핑
+            # 그룹핑: 같은 분말+같은 LOT → 중량 합산 (1건으로)
+            # 다른 LOT → 별도 행 (각 투입량 표시)
+            # 구버전 데이터 호환: "LOT-A,LOT-B" 형태로 저장된 단일 레코드는
+            # 개별 LOT로 분리하되 중량은 균등 분배 (정확한 분할 정보 없음)
             grouped = {}
             for m in raw_inputs:
-                key = (m['powder_name'], m['material_lot'])
-                if key not in grouped:
-                    grouped[key] = dict(m)
-                else:
-                    grouped[key]['actual_weight'] = round(
-                        float(grouped[key]['actual_weight']) + float(m['actual_weight']), 3
-                    )
-                    grouped[key]['target_weight'] = round(
-                        float(grouped[key]['target_weight']) + float(m['target_weight']), 3
-                    )
+                lot_str = m['material_lot'] or ''
+                sub_lots = list(dict.fromkeys([l.strip() for l in lot_str.split(',') if l.strip()]))
+                n = len(sub_lots)
+                for lot in sub_lots:
+                    key = (m['powder_name'], lot)
+                    per_weight = round(float(m['actual_weight']) / n, 3)
+                    per_target = round(float(m['target_weight']) / n, 3)
+                    if key not in grouped:
+                        entry = dict(m)
+                        entry['material_lot'] = lot
+                        entry['actual_weight'] = per_weight
+                        entry['target_weight'] = per_target
+                        grouped[key] = entry
+                    else:
+                        grouped[key]['actual_weight'] = round(
+                            float(grouped[key]['actual_weight']) + per_weight, 3
+                        )
             material_inputs = list(grouped.values())
 
             # 3. 각 원재료의 수입검사 결과 조회 (LOT가 쉼표로 합쳐진 경우 분리하여 각각 조회)
