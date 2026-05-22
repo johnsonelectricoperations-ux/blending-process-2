@@ -440,30 +440,45 @@ function t(key) {
                     container.innerHTML = '<div style="color:#888; padding:12px;">등록된 분말이 없습니다.</div>';
                     return;
                 }
-                let html = `<table style="width:100%; border-collapse:collapse; font-size:0.95em;">
+                let html = `
+                    <div style="background:#2A2A2A; border-radius:6px; padding:10px 14px; margin-bottom:12px; font-size:0.85em; color:#A0A0A0; line-height:1.6;">
+                        <strong style="color:#F07D00;">💡 스캔 규칙 안내</strong><br>
+                        • <strong>정규식 패턴</strong> (우선 적용): LOT 번호 형식을 정규식으로 지정. 예) <code style="background:#1E1E1E;padding:1px 5px;border-radius:3px;">T\\d{2}IP\\d+</code>
+                          → "T26IP04151" 추출<br>
+                        • <strong>단어 위치</strong>: 정규식이 없을 때 사용. 스캔 텍스트에서 N번째 단어 추출. 줄바꿈이 보존될 때만 정확함.
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.95em;">
                     <thead>
                         <tr style="background:#1E1E1E;">
                             <th style="padding:10px 14px; text-align:left; border:1px solid #333;">분말명</th>
                             <th style="padding:10px 14px; text-align:center; border:1px solid #333;">구분</th>
-                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:160px;">스캔 LOT 위치</th>
-                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:120px;">저장</th>
+                            <th style="padding:10px 14px; text-align:left; border:1px solid #333;">정규식 패턴 (우선)</th>
+                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:140px;">단어 위치 (대체)</th>
+                            <th style="padding:10px 14px; text-align:center; border:1px solid #333; width:80px;">저장</th>
                         </tr>
                     </thead>
                     <tbody>`;
                 data.data.forEach(spec => {
                     const pos = spec.scan_lot_position || 0;
+                    const regex = spec.scan_regex || '';
                     const catLabel = spec.category === 'mixing' ? '배합분말' : '수입분말';
                     html += `<tr style="border-bottom:1px solid #333;">
                         <td style="padding:10px 14px; border:1px solid #333; font-weight:600;">${spec.powder_name}</td>
                         <td style="padding:10px 14px; border:1px solid #333; text-align:center; color:#A0A0A0;">${catLabel}</td>
-                        <td style="padding:10px 14px; border:1px solid #333; text-align:center;">
-                            <input type="number" min="0" max="10" value="${pos}"
-                                id="scanPos_${spec.id}"
-                                style="width:70px; padding:5px; border:1px solid #555; border-radius:4px; text-align:center; background:#2A2A2A; color:#E8E8E8;">
-                            <span style="color:#888; font-size:0.82em; margin-left:6px;">번째 단어</span>
+                        <td style="padding:10px 14px; border:1px solid #333;">
+                            <input type="text" value="${regex.replace(/"/g, '&quot;')}"
+                                id="scanRegex_${spec.id}"
+                                placeholder="예: T\\d{2}IP\\d+"
+                                style="width:100%; padding:5px; border:1px solid #555; border-radius:4px; background:#2A2A2A; color:#E8E8E8; font-family:monospace; font-size:0.9em;">
                         </td>
                         <td style="padding:10px 14px; border:1px solid #333; text-align:center;">
-                            <button class="btn secondary" style="padding:5px 14px; font-size:0.85em;"
+                            <input type="number" min="0" max="30" value="${pos}"
+                                id="scanPos_${spec.id}"
+                                style="width:60px; padding:5px; border:1px solid #555; border-radius:4px; text-align:center; background:#2A2A2A; color:#E8E8E8;">
+                            <span style="color:#888; font-size:0.82em; margin-left:4px;">번째</span>
+                        </td>
+                        <td style="padding:10px 14px; border:1px solid #333; text-align:center;">
+                            <button class="btn secondary" style="padding:5px 10px; font-size:0.85em;"
                                 onclick="saveScanLotPosition(${spec.id}, '${spec.powder_name}')">저장</button>
                         </td>
                     </tr>`;
@@ -476,11 +491,21 @@ function t(key) {
         }
 
         async function saveScanLotPosition(specId, powderName) {
-            const input = document.getElementById(`scanPos_${specId}`);
-            if (!input) return;
-            const pos = parseInt(input.value) || 0;
+            const posInput = document.getElementById(`scanPos_${specId}`);
+            const regexInput = document.getElementById(`scanRegex_${specId}`);
+            if (!posInput) return;
+            const pos = parseInt(posInput.value) || 0;
+            const regex = regexInput ? regexInput.value.trim() : '';
+
+            // 정규식이 입력된 경우 유효성 검사
+            if (regex) {
+                try { new RegExp(regex); } catch (e) {
+                    alert(`정규식 오류: ${e.message}\n올바른 정규식을 입력하세요.`);
+                    return;
+                }
+            }
+
             try {
-                // 현재 spec 전체를 가져와서 scan_lot_position만 업데이트
                 const getResp = await fetch(`${API_BASE}/api/admin/powder-spec`);
                 const getData = await getResp.json();
                 const spec = getData.data.find(s => s.id === specId);
@@ -489,13 +514,13 @@ function t(key) {
                 const resp = await fetch(`${API_BASE}/api/admin/powder-spec/${specId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...spec, scan_lot_position: pos })
+                    body: JSON.stringify({ ...spec, scan_lot_position: pos, scan_regex: regex })
                 });
                 const result = await resp.json();
                 if (result.success) {
-                    // 캐시 갱신
-                    scanLotPositionCache[powderName] = pos;
-                    alert(`${powderName} 저장 완료 (위치: ${pos === 0 ? '전체 사용' : pos + '번째 단어'})`);
+                    scanLotPositionCache[powderName] = { pos, regex };
+                    const desc = regex ? `정규식: ${regex}` : (pos > 0 ? `${pos}번째 단어` : '전체 사용');
+                    alert(`${powderName} 저장 완료 (${desc})`);
                 } else {
                     alert('저장 실패: ' + (result.message || ''));
                 }
@@ -6989,10 +7014,13 @@ function t(key) {
                 const data = await resp.json();
                 if (data.success) {
                     data.data.forEach(spec => {
-                        scanLotPositionCache[spec.powder_name] = parseInt(spec.scan_lot_position) || 0;
+                        scanLotPositionCache[spec.powder_name] = {
+                            pos: parseInt(spec.scan_lot_position) || 0,
+                            regex: spec.scan_regex || ''
+                        };
                     });
                 }
-            } catch (e) { /* 캐시 로드 실패 시 기본값(0) 사용 */ }
+            } catch (e) { /* 캐시 로드 실패 시 기본값 사용 */ }
         }
 
         async function preloadScanLotPositions() {
@@ -7001,17 +7029,38 @@ function t(key) {
                 const data = await resp.json();
                 if (data.success) {
                     data.data.forEach(spec => {
-                        scanLotPositionCache[spec.powder_name] = parseInt(spec.scan_lot_position) || 0;
+                        scanLotPositionCache[spec.powder_name] = {
+                            pos: parseInt(spec.scan_lot_position) || 0,
+                            regex: spec.scan_regex || ''
+                        };
                     });
                 }
             } catch (e) { console.warn('스캔 규칙 사전 로드 실패:', e); }
         }
 
         function applyScanLotRule(inputEl, powderName) {
-            const pos = scanLotPositionCache[powderName] || 0;
-            if (pos <= 0) return; // 0이면 전체 사용
+            const rule = scanLotPositionCache[powderName];
+            if (!rule) return;
             const raw = inputEl.value.trim();
             if (!raw) return;
+
+            // 정규식 우선: 스캐너가 줄바꿈을 제거해도 정확히 추출 가능
+            if (rule.regex) {
+                try {
+                    const match = raw.match(new RegExp(rule.regex));
+                    if (match) {
+                        inputEl.value = match[0]; // 전체 매치 (그룹 없는 경우)
+                        if (match[1] !== undefined) inputEl.value = match[1]; // 캡처 그룹 우선
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('스캔 정규식 오류:', e);
+                }
+            }
+
+            // 단어 위치 방식 (fallback)
+            const pos = rule.pos;
+            if (pos <= 0) return;
             const words = raw.split(/\s+/);
             if (words.length >= pos) {
                 inputEl.value = words[pos - 1];

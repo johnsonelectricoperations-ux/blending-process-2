@@ -1946,7 +1946,8 @@ def admin_update_powder_spec(spec_id):
                     forming_load_min = ?, forming_load_max = ?, forming_load_type = ?,
                     particle_size_type = ?,
                     category = ?,
-                    scan_lot_position = ?
+                    scan_lot_position = ?,
+                    scan_regex = ?
                 WHERE id = ?
             ''', (
                 data.get('powder_name'),
@@ -1963,6 +1964,7 @@ def admin_update_powder_spec(spec_id):
                 data.get('particle_size_type'),
                 data.get('category', 'incoming'),
                 int(data.get('scan_lot_position', 0) or 0),
+                data.get('scan_regex', '') or '',
                 spec_id
             ))
 
@@ -2483,7 +2485,9 @@ def ensure_powder_spec_scan_lot_column():
         columns = [col[1] for col in cursor.fetchall()]
         if 'scan_lot_position' not in columns:
             cursor.execute('ALTER TABLE powder_spec ADD COLUMN scan_lot_position INTEGER DEFAULT 0')
-            conn.commit()
+        if 'scan_regex' not in columns:
+            cursor.execute("ALTER TABLE powder_spec ADD COLUMN scan_regex VARCHAR(200) DEFAULT ''")
+        conn.commit()
 
 ensure_powder_spec_scan_lot_column()
 
