@@ -6354,9 +6354,10 @@ function t(key) {
 
         async function loadAutoInputPage(workId, sourcePage = 'blending') {
             try {
-                // 캐시 초기화
+                // 캐시 초기화 (스캔 규칙 캐시도 초기화하여 최신 설정값을 반영)
                 approvedLotsCache = {};
                 lotRowCounters = {};
+                scanLotPositionCache = {};
 
                 // DB에서 배합작업 정보 가져오기
                 const response = await fetch(`${API_BASE}/api/blending/work/${workId}`);
@@ -6378,6 +6379,9 @@ function t(key) {
                 document.getElementById('autoInputProductName').textContent = data.work.product_name;
                 document.getElementById('autoInputBatchLot').textContent = data.work.batch_lot;
                 document.getElementById('autoInputTargetWeight').textContent = parseFloat(data.work.target_total_weight).toLocaleString();
+
+                // 스캔 규칙 미리 로드 (타이밍 경쟁 방지: 페이지 로드 시 모든 분말 위치 사전 로드)
+                await preloadScanLotPositions();
 
                 // 원재료 목록 렌더링
                 await renderAutoInputMaterialListFromDB(data.work, data.recipes, data.material_inputs || []);
@@ -6874,6 +6878,18 @@ function t(key) {
             } catch (e) { /* 캐시 로드 실패 시 기본값(0) 사용 */ }
         }
 
+        async function preloadScanLotPositions() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/admin/powder-spec`);
+                const data = await resp.json();
+                if (data.success) {
+                    data.data.forEach(spec => {
+                        scanLotPositionCache[spec.powder_name] = parseInt(spec.scan_lot_position) || 0;
+                    });
+                }
+            } catch (e) { console.warn('스캔 규칙 사전 로드 실패:', e); }
+        }
+
         function applyScanLotRule(inputEl, powderName) {
             const pos = scanLotPositionCache[powderName] || 0;
             if (pos <= 0) return; // 0이면 전체 사용
@@ -6909,6 +6925,7 @@ function t(key) {
                             style="width: 100%; padding: 8px;"
                             onchange="updateTotalWeight(${materialIndex})">
                         <option value="">선택하세요</option>
+                        <option value="500">0.5 ton (500 kg)</option>
                         <option value="1000">1 ton (1,000 kg)</option>
                         <option value="2000">2 ton (2,000 kg)</option>
                         <option value="3000">3 ton (3,000 kg)</option>
