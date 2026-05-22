@@ -4819,7 +4819,7 @@ function t(key) {
                                     `<button class="btn secondary" onclick="restoreBlendingWork(${work.id})" style="padding: 6px 12px; font-size: 0.9em;">복원</button>` :
                                 work.status === 'completed' ?
                                     `<div style="display: flex; gap: 5px;">
-                                        <button class="btn" onclick="loadAutoInputPage(${work.id}, 'blending-log')" style="padding: 6px 12px; font-size: 0.9em; background:#F07D00; color:white; border:none; border-radius:4px;">
+                                        <button class="btn" onclick="showBlendingWorkDetail(${work.id})" style="padding: 6px 12px; font-size: 0.9em; background:#F07D00; color:white; border:none; border-radius:4px;">
                                             입력현황
                                         </button>
                                         <button class="btn secondary" onclick="hideBlendingWork(${work.id}, '${work.batch_lot}')" style="padding: 6px 12px; font-size: 0.9em;">
@@ -4852,6 +4852,123 @@ function t(key) {
                 console.error('배합작업 목록 로딩 실패:', error);
                 document.getElementById('blendingWorksTableBody').innerHTML =
                     '<tr><td colspan="9" class="empty-message">오류 발생: ' + error.message + '</td></tr>';
+            }
+        }
+
+        async function showBlendingWorkDetail(workId) {
+            try {
+                const resp = await fetch(`${API_BASE}/api/blending/work/${workId}`);
+                const data = await resp.json();
+                if (!data.success) { alert('데이터를 불러올 수 없습니다: ' + data.message); return; }
+
+                const work = data.work;
+                const inputs = data.material_inputs || [];
+                const recipes = data.recipes || [];
+
+                // 레시피 기준으로 목표 중량 맵 생성
+                const recipeMap = {};
+                recipes.forEach(r => { recipeMap[r.powder_name] = r.calculated_weight || r.target_weight || 0; });
+
+                // powder_name별로 그룹핑
+                const grouped = {};
+                inputs.forEach(inp => {
+                    const key = inp.powder_name;
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push(inp);
+                });
+
+                const isMain = (name) => {
+                    const r = recipes.find(r => r.powder_name === name);
+                    return r && r.is_main;
+                };
+
+                const formatWeight = (w, main) => {
+                    if (w === null || w === undefined) return '-';
+                    if (main) return `${Number(w).toLocaleString()} kg`;
+                    return `${(Number(w) * 1000).toFixed(1)} g`;
+                };
+
+                let rowsHtml = '';
+                Object.keys(grouped).forEach(powderName => {
+                    const lots = grouped[powderName];
+                    const main = isMain(powderName);
+                    const targetW = recipeMap[powderName] || (lots[0] && lots[0].target_weight) || 0;
+                    const totalActual = lots.reduce((s, l) => s + Number(l.actual_weight || 0), 0);
+
+                    if (lots.length === 1) {
+                        const l = lots[0];
+                        const dev = Number(l.weight_deviation || 0).toFixed(1);
+                        const validClass = l.is_valid ? 'color:#4CAF50' : 'color:#EF5350';
+                        rowsHtml += `
+                            <tr>
+                                <td style="padding:10px 14px; font-weight:600;">${powderName}</td>
+                                <td style="padding:10px 14px; text-align:right;">${formatWeight(targetW, main)}</td>
+                                <td style="padding:10px 14px; font-family:monospace;">${l.material_lot || '-'}</td>
+                                <td style="padding:10px 14px; text-align:right; font-weight:700;">${formatWeight(l.actual_weight, main)}</td>
+                                <td style="padding:10px 14px; text-align:right; ${validClass}">${dev}%</td>
+                            </tr>`;
+                    } else {
+                        // 멀티 LOT: 헤더 행 + 서브행
+                        rowsHtml += `
+                            <tr style="background:rgba(240,125,0,0.08)">
+                                <td style="padding:10px 14px; font-weight:700;" colspan="2">${powderName}
+                                    <span style="font-size:0.8em; color:#A0A0A0; margin-left:8px;">합계: ${formatWeight(totalActual, main)}</span>
+                                </td>
+                                <td style="padding:10px 14px; color:#A0A0A0; font-size:0.85em;">목표: ${formatWeight(targetW, main)}</td>
+                                <td colspan="2"></td>
+                            </tr>`;
+                        lots.forEach((l, idx) => {
+                            const dev = Number(l.weight_deviation || 0).toFixed(1);
+                            rowsHtml += `
+                                <tr style="background:rgba(255,255,255,0.02)">
+                                    <td style="padding:6px 14px 6px 28px; color:#A0A0A0;">└ LOT ${idx + 1}</td>
+                                    <td style="padding:6px 14px; text-align:right; color:#A0A0A0;">-</td>
+                                    <td style="padding:6px 14px; font-family:monospace; font-size:0.9em;">${l.material_lot || '-'}</td>
+                                    <td style="padding:6px 14px; text-align:right; font-weight:600;">${formatWeight(l.actual_weight, main)}</td>
+                                    <td style="padding:6px 14px; text-align:right; font-size:0.85em;">${dev}%</td>
+                                </tr>`;
+                        });
+                    }
+                });
+
+                if (!rowsHtml) rowsHtml = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">투입 기록이 없습니다.</td></tr>';
+
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;justify-content:center;align-items:center;';
+                modal.innerHTML = `
+                    <div style="background:#1E1E1E;border-radius:10px;padding:24px;width:90vw;max-width:860px;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+                            <div>
+                                <h3 style="margin:0;color:#F07D00;">📋 원재료 투입 현황</h3>
+                                <div style="color:#A0A0A0;font-size:0.9em;margin-top:4px;">
+                                    ${work.product_name} &nbsp;|&nbsp; 배합 LOT: <strong style="color:#E8E8E8;">${work.batch_lot}</strong>
+                                    &nbsp;|&nbsp; 작업자: ${work.operator || '-'}
+                                    &nbsp;|&nbsp; 목표중량: ${Number(work.target_total_weight).toLocaleString()} kg
+                                </div>
+                            </div>
+                            <button onclick="this.closest('div[style*=fixed]').remove()"
+                                style="background:#555;color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:1em;">✕ 닫기</button>
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.95em;">
+                            <thead>
+                                <tr style="background:#2A2A2A;color:#A0A0A0;font-size:0.85em;text-transform:uppercase;">
+                                    <th style="padding:10px 14px;text-align:left;">원재료명</th>
+                                    <th style="padding:10px 14px;text-align:right;">목표중량</th>
+                                    <th style="padding:10px 14px;text-align:left;">LOT번호</th>
+                                    <th style="padding:10px 14px;text-align:right;">투입중량</th>
+                                    <th style="padding:10px 14px;text-align:right;">편차</th>
+                                </tr>
+                            </thead>
+                            <tbody style="color:#E8E8E8;">
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                    </div>`;
+                modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+                document.body.appendChild(modal);
+
+            } catch (e) {
+                alert('오류: ' + e.message);
             }
         }
 
