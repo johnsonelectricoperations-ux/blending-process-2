@@ -4217,6 +4217,7 @@ function t(key) {
                         <label>${recipe.powder_name} 중량 (ton) *</label>
                         <select id="mainPowderWeight_${index}" class="main-powder-weight-select" data-powder-name="${recipe.powder_name}" required>
                             <option value="">선택하세요</option>
+                            <option value="500">0.5 ton (500 kg)</option>
                             <option value="1000">1 ton (1,000 kg)</option>
                             <option value="2000">2 ton (2,000 kg)</option>
                             <option value="3000">3 ton (3,000 kg)</option>
