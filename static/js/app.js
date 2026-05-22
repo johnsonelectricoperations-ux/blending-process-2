@@ -4534,7 +4534,22 @@ function t(key) {
         }
 
         async function printLabel(index) {
-            // 로컬 프린터 에이전트를 통해 큰 라벨 + 작은 라벨 동시 출력
+            // 브라우저 팝업은 사용자 제스처 컨텍스트가 살아있을 때 즉시 열어야 합니다.
+            // await 이후에 window.open을 호출하면 팝업 차단에 걸리므로, 먼저 창을 엽니다.
+            const list = document.getElementById('labelList');
+            const labelEl = list && list.children && list.children[index - 1];
+            if (!labelEl) return alert('라벨을 찾을 수 없습니다.');
+
+            // QR코드 이미지가 생성되었는지 확인
+            const qrcodeDiv = labelEl.querySelector('div[id^="label-qrcode-"]');
+            const qrcodeImg = qrcodeDiv ? qrcodeDiv.querySelector('img') : null;
+            if (!qrcodeImg || !qrcodeImg.src || qrcodeImg.src === window.location.href) {
+                return alert('QR코드가 아직 생성되지 않았습니다. 잠시 후 다시 시도하세요.');
+            }
+
+            const content = labelEl.innerHTML;
+
+            // 로컬 프린터 에이전트를 통해 큰 라벨 + 작은 라벨 동시 출력 시도
             const labelData = _labelDataCache[index - 1];
             if (labelData) {
                 try {
@@ -4556,19 +4571,7 @@ function t(key) {
                 }
             }
 
-            // 폴백: 브라우저 창 인쇄 (큰 라벨만)
-            const list = document.getElementById('labelList');
-            const labelEl = list && list.children && list.children[index - 1];
-            if (!labelEl) return alert('라벨을 찾을 수 없습니다.');
-
-            // QR코드 이미지가 생성되었는지 확인
-            const qrcodeDiv = labelEl.querySelector('div[id^="label-qrcode-"]');
-            const qrcodeImg = qrcodeDiv ? qrcodeDiv.querySelector('img') : null;
-            if (!qrcodeImg) {
-                return alert('QR코드가 아직 생성되지 않았습니다. 잠시 후 다시 시도하세요.');
-            }
-
-            const content = labelEl.innerHTML;
+            // 브라우저 창 인쇄 (큰 라벨만)
             const w = window.open('', '_blank');
             if (!w) return alert('팝업 차단을 확인하세요.');
 
@@ -4627,53 +4630,18 @@ function t(key) {
             const list = document.getElementById('labelList');
             if (!list || !list.children || list.children.length === 0) return alert('출력할 라벨이 없습니다.');
 
-            // 로컬 에이전트를 통해 전체 라벨 순차 출력
-            if (_labelDataCache.length > 0) {
-                try {
-                    const resp = await fetch('http://localhost:9100/status');
-                    if (resp.ok) {
-                        // 에이전트 실행 중: 라벨 순차 출력
-                        let failCount = 0;
-                        for (let i = 0; i < _labelDataCache.length; i++) {
-                            try {
-                                const r = await fetch('http://localhost:9100/print', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(_labelDataCache[i])
-                                });
-                                const result = await r.json();
-                                if (!result.success) failCount++;
-                            } catch (e) {
-                                failCount++;
-                            }
-                        }
-                        if (failCount === 0) {
-                            alert(`전체 ${_labelDataCache.length}장 인쇄 완료 (큰 라벨 + 작은 라벨)`);
-                        } else {
-                            alert(`${_labelDataCache.length - failCount}장 성공, ${failCount}장 실패\n브라우저 인쇄로 대체합니다.`);
-                        }
-                        if (failCount === 0) return;
-                    }
-                } catch (e) {
-                    console.warn('프린터 에이전트 연결 실패, 브라우저 인쇄로 대체:', e);
-                }
-            }
-
             // QR코드 이미지가 모두 생성되었는지 확인
             const allQrImgs = list.querySelectorAll('div[id^="label-qrcode-"] img');
             if (allQrImgs.length === 0) {
                 return alert('QR코드가 아직 생성되지 않았습니다. 잠시 후 다시 시도하세요.');
             }
 
-            // 모든 라벨을 하나의 인쇄 창에 페이지 나눔으로 출력
-            const w = window.open('', '_blank');
-            if (!w) return alert('팝업 차단을 확인하세요.');
-
+            // 팝업과 HTML은 사용자 제스처 컨텍스트에서 즉시 준비합니다.
+            // (await 이후에 window.open을 호출하면 팝업 차단에 걸림)
             let labelsHtml = '';
             for (let i = 0; i < list.children.length; i++) {
                 const labelEl = list.children[i];
                 const content = labelEl.innerHTML;
-                // 마지막 라벨이 아닌 경우 페이지 나눔 추가
                 const pageBreak = (i < list.children.length - 1) ? 'page-break-after: always;' : '';
                 labelsHtml += `<div class="label" style="${pageBreak}">${content}</div>`;
             }
@@ -4701,7 +4669,6 @@ function t(key) {
                     ${labelsHtml}
                     <script>
                         window.onload = function() {
-                            // 모든 이미지 로드 완료 후 인쇄 (QR코드 포함)
                             var imgs = document.querySelectorAll('img');
                             var loaded = 0;
                             var total = imgs.length;
@@ -4717,7 +4684,6 @@ function t(key) {
                                     imgs[i].onerror = checkPrint;
                                 }
                             }
-                            // 안전장치: 최대 5초 후 강제 인쇄
                             setTimeout(function(){ window.print(); window.close(); }, 5000);
                         };
                     <\/script>
@@ -4725,6 +4691,43 @@ function t(key) {
                 </html>
             `;
 
+            // 팝업을 await 이전에 즉시 엽니다 (사용자 제스처 컨텍스트 유지)
+            const w = window.open('', '_blank');
+            if (!w) return alert('팝업 차단을 확인하세요.\n브라우저 설정에서 이 사이트의 팝업을 허용해주세요.');
+
+            // 로컬 에이전트 시도 (성공하면 팝업 닫고 반환)
+            if (_labelDataCache.length > 0) {
+                try {
+                    const resp = await fetch('http://localhost:9100/status');
+                    if (resp.ok) {
+                        let failCount = 0;
+                        for (let i = 0; i < _labelDataCache.length; i++) {
+                            try {
+                                const r = await fetch('http://localhost:9100/print', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(_labelDataCache[i])
+                                });
+                                const result = await r.json();
+                                if (!result.success) failCount++;
+                            } catch (e) {
+                                failCount++;
+                            }
+                        }
+                        if (failCount === 0) {
+                            alert(`전체 ${_labelDataCache.length}장 인쇄 완료 (큰 라벨 + 작은 라벨)`);
+                            w.close();
+                            return;
+                        } else {
+                            alert(`${_labelDataCache.length - failCount}장 성공, ${failCount}장 실패\n브라우저 인쇄로 대체합니다.`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('프린터 에이전트 연결 실패, 브라우저 인쇄로 대체:', e);
+                }
+            }
+
+            // 에이전트 없으면 이미 열린 팝업에 내용 씁니다
             w.document.open();
             w.document.write(html);
             w.document.close();
