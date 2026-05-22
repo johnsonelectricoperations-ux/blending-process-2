@@ -1699,7 +1699,7 @@ function t(key) {
                 // 검사구분에 따라 다른 API 호출
                 if (category === 'incoming') {
                     // 수입검사 -> 수입분말만
-                    const response = await fetch(`${API_BASE}/api/powders`);
+                    const response = await fetch(`${API_BASE}/api/powders?category=incoming`);
                     const data = await response.json();
 
                     if (data.success && data.powders) {
