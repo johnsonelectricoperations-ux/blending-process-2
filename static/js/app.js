@@ -7121,7 +7121,7 @@ function t(key) {
                                class="auto-input-field lot-input"
                                placeholder="스캔 또는 수동입력"
                                style="flex: 1; padding: 8px;"
-                               oninput="resetLotValidation(${materialIndex}, ${lotIndex})"
+                               oninput="onLotScanInput(${materialIndex}, ${lotIndex}, '${powderName}')"
                                onblur="applyScanLotRule(this, '${powderName}'); validateAutoInputLot(${materialIndex}, ${lotIndex}, '${powderName}')"
                                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
                         <label style="display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 0.85em; cursor: pointer;">
@@ -7184,6 +7184,25 @@ function t(key) {
         }
 
         // LOT 검증 상태 초기화 (입력 시)
+        let _scanDebounceTimers = {};
+
+        function onLotScanInput(materialIndex, lotIndex, powderName) {
+            resetLotValidation(materialIndex, lotIndex);
+
+            // 스캐너 입력 감지: 입력이 멈춘 후 250ms 뒤에 스캔 규칙 적용
+            // (스캐너는 모든 문자를 빠르게 전송하므로 디바운스로 완성 시점 감지)
+            const key = `${materialIndex}_${lotIndex}`;
+            clearTimeout(_scanDebounceTimers[key]);
+            _scanDebounceTimers[key] = setTimeout(() => {
+                const inputEl = document.getElementById(`lotInput_${materialIndex}_${lotIndex}`);
+                if (!inputEl) return;
+                // 공백 포함 또는 15자 초과면 바코드 스캔으로 판단 → 규칙 적용
+                if (inputEl.value.includes(' ') || inputEl.value.length > 15) {
+                    applyScanLotRule(inputEl, powderName);
+                }
+            }, 250);
+        }
+
         function resetLotValidation(materialIndex, lotIndex) {
             const lotInput = document.getElementById(`lotInput_${materialIndex}_${lotIndex}`);
             const validationDiv = document.getElementById(`lotValidation_${materialIndex}_${lotIndex}`);
