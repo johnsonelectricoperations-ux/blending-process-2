@@ -4345,17 +4345,18 @@ function t(key) {
                 return;
             }
 
-            // Main 분말 중량은 작업지시서 화면에서 입력하지 않도록 변경됨.
-            // 배합 작업 시작 후 원재료 투입 화면에서 Main 분말을 1~5 ton 중 선택할 수 있습니다.
             const mainRecipes = currentRecipe.filter(r => r.is_main);
             let mainPowderWeights = {};
 
-            // 만약 start 화면에 값이 존재하면 전송(선택적)
+            // 레시피 비율 기준으로 Main 분말 중량 계산 (비율 합계 대비 각 분말 비율)
+            const totalMainRatio = mainRecipes.reduce((sum, r) => sum + r.ratio, 0);
+            const blendTotal = parseFloat(targetWeight);
             for (let i = 0; i < mainRecipes.length; i++) {
                 const select = document.getElementById(`mainPowderWeight_${i}`);
                 if (select && select.value) {
-                    const weight = parseFloat(select.value);
-                    if (!isNaN(weight)) mainPowderWeights[mainRecipes[i].powder_name] = weight;
+                    mainPowderWeights[mainRecipes[i].powder_name] = parseFloat(select.value);
+                } else if (totalMainRatio > 0) {
+                    mainPowderWeights[mainRecipes[i].powder_name] = blendTotal * (mainRecipes[i].ratio / totalMainRatio);
                 }
             }
 
@@ -6573,22 +6574,24 @@ function t(key) {
                 return;
             }
 
-            // Main 분말 중량 정보 가져오기
-            const mainWeights = {};
-            recipes.forEach(item => {
-                if (item.is_main == 1 || item.is_main === true) {
-                    // work.main_powder_weights가 있으면 사용, 없으면 targetWeight를 Main 중량으로 사용
-                    if (work.main_powder_weights && work.main_powder_weights[item.powder_name]) {
-                        mainWeights[item.powder_name] = parseFloat(work.main_powder_weights[item.powder_name]);
-                    } else {
-                        mainWeights[item.powder_name] = targetWeight;
-                    }
-                }
-            });
-
             // Main 분말들의 비율 합계 계산
             const mainRecipes = recipes.filter(r => r.is_main == 1 || r.is_main === true);
             const totalMainRatio = mainRecipes.reduce((sum, r) => sum + r.ratio, 0);
+
+            // Main 분말 중량 정보 가져오기 (저장값 우선, 없으면 비율 기준 계산)
+            const mainWeights = {};
+            recipes.forEach(item => {
+                if (item.is_main == 1 || item.is_main === true) {
+                    if (work.main_powder_weights && work.main_powder_weights[item.powder_name]) {
+                        mainWeights[item.powder_name] = parseFloat(work.main_powder_weights[item.powder_name]);
+                    } else {
+                        // 비율 합계 기준으로 비례 계산 (main 2개인 경우도 정확히 분할)
+                        mainWeights[item.powder_name] = totalMainRatio > 0
+                            ? targetWeight * (item.ratio / totalMainRatio)
+                            : targetWeight;
+                    }
+                }
+            });
 
             // 전체 배합 총중량 계산: Main 중량 / (Main 비율 / 100)
             // 예: Main 2000kg, 비율 97.2% → 전체 = 2000 / 0.972 = 2057.61kg
