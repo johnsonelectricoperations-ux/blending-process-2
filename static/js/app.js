@@ -7044,13 +7044,12 @@ function t(key) {
             const raw = inputEl.value.trim();
             if (!raw) return;
 
-            // 정규식 우선: 스캐너가 줄바꿈을 제거해도 정확히 추출 가능
+            // 정규식 우선: 스캐너가 줄바꿈을 제거해도 정확히 추출 가능 (대소문자 무시)
             if (rule.regex) {
                 try {
-                    const match = raw.match(new RegExp(rule.regex));
+                    const match = raw.match(new RegExp(rule.regex, 'i'));
                     if (match) {
-                        inputEl.value = match[0]; // 전체 매치 (그룹 없는 경우)
-                        if (match[1] !== undefined) inputEl.value = match[1]; // 캡처 그룹 우선
+                        inputEl.value = match[1] !== undefined ? match[1] : match[0];
                         return;
                     }
                 } catch (e) {
