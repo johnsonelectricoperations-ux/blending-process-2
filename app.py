@@ -3560,9 +3560,7 @@ def trace_by_batch_lot(batch_lot):
                         grouped[key]['actual_weight'] = round(
                             float(grouped[key]['actual_weight']) + per_weight, 3
                         )
-                        grouped[key]['target_weight'] = round(
-                            float(grouped[key]['target_weight']) + per_target, 3
-                        )
+                        # target_weight는 레시피 총 목표이므로 합산하지 않음
                         if not m.get('is_valid', True):
                             grouped[key]['is_valid'] = False
             material_inputs = list(grouped.values())

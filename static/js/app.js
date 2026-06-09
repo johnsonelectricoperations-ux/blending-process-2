@@ -4895,12 +4895,28 @@ function t(key) {
                 const recipeMap = {};
                 recipes.forEach(r => { recipeMap[r.powder_name] = r.calculated_weight || r.target_weight || 0; });
 
-                // powder_name별로 그룹핑
-                const grouped = {};
+                // Step 1: (powder_name + lot) 단위로 동일 LOT 합산
+                const lotMerged = {};
                 inputs.forEach(inp => {
-                    const key = inp.powder_name;
-                    if (!grouped[key]) grouped[key] = [];
-                    grouped[key].push(inp);
+                    const lotKey = `${inp.powder_name}|||${inp.material_lot || ''}`;
+                    if (!lotMerged[lotKey]) {
+                        lotMerged[lotKey] = {
+                            powder_name: inp.powder_name,
+                            material_lot: inp.material_lot,
+                            actual_weight: Number(inp.actual_weight || 0),
+                            is_valid: !!inp.is_valid
+                        };
+                    } else {
+                        lotMerged[lotKey].actual_weight += Number(inp.actual_weight || 0);
+                        if (!inp.is_valid) lotMerged[lotKey].is_valid = false;
+                    }
+                });
+
+                // Step 2: powder_name별로 그룹핑 (고유 LOT 목록)
+                const grouped = {};
+                Object.values(lotMerged).forEach(item => {
+                    if (!grouped[item.powder_name]) grouped[item.powder_name] = [];
+                    grouped[item.powder_name].push(item);
                 });
 
                 const isMain = (name) => {
@@ -4916,42 +4932,43 @@ function t(key) {
 
                 let rowsHtml = '';
                 Object.keys(grouped).forEach(powderName => {
-                    const lots = grouped[powderName];
+                    const lots = grouped[powderName];  // 고유 LOT별 합산 목록
                     const main = isMain(powderName);
-                    const targetW = recipeMap[powderName] || (lots[0] && lots[0].target_weight) || 0;
-                    const totalActual = lots.reduce((s, l) => s + Number(l.actual_weight || 0), 0);
+                    const targetW = recipeMap[powderName] || 0;
+                    const totalActual = lots.reduce((s, l) => s + l.actual_weight, 0);
+                    // 편차는 원재료별 총 투입량 기준으로 계산
+                    const totalDev = targetW > 0 ? ((totalActual - targetW) / targetW * 100).toFixed(1) : '0.0';
+                    const allValid = lots.every(l => l.is_valid);
+                    const validClass = allValid ? 'color:#4CAF50' : 'color:#EF5350';
 
                     if (lots.length === 1) {
-                        const l = lots[0];
-                        const dev = Number(l.weight_deviation || 0).toFixed(1);
-                        const validClass = l.is_valid ? 'color:#4CAF50' : 'color:#EF5350';
+                        // 단일 LOT: 1행으로 편차 포함 표시
                         rowsHtml += `
                             <tr>
                                 <td style="padding:10px 14px; font-weight:600;">${powderName}</td>
                                 <td style="padding:10px 14px; text-align:right;">${formatWeight(targetW, main)}</td>
-                                <td style="padding:10px 14px; font-family:monospace;">${l.material_lot || '-'}</td>
-                                <td style="padding:10px 14px; text-align:right; font-weight:700;">${formatWeight(l.actual_weight, main)}</td>
-                                <td style="padding:10px 14px; text-align:right; ${validClass}">${dev}%</td>
+                                <td style="padding:10px 14px; font-family:monospace;">${lots[0].material_lot || '-'}</td>
+                                <td style="padding:10px 14px; text-align:right; font-weight:700;">${formatWeight(totalActual, main)}</td>
+                                <td style="padding:10px 14px; text-align:right; ${validClass}">${totalDev}%</td>
                             </tr>`;
                     } else {
-                        // 멀티 LOT: 헤더 행 + 서브행
+                        // 복수 LOT: 합계 헤더행(목표/총투입/편차) + LOT별 서브행(투입량만)
                         rowsHtml += `
-                            <tr style="background:rgba(240,125,0,0.08)">
-                                <td style="padding:10px 14px; font-weight:700;" colspan="2">${powderName}
-                                    <span style="font-size:0.8em; color:#A0A0A0; margin-left:8px;">합계: ${formatWeight(totalActual, main)}</span>
-                                </td>
-                                <td style="padding:10px 14px; color:#A0A0A0; font-size:0.85em;">목표: ${formatWeight(targetW, main)}</td>
-                                <td colspan="2"></td>
+                            <tr style="background:rgba(240,125,0,0.1)">
+                                <td style="padding:10px 14px; font-weight:700;">${powderName}</td>
+                                <td style="padding:10px 14px; text-align:right;">${formatWeight(targetW, main)}</td>
+                                <td style="padding:10px 14px; color:#A0A0A0; font-size:0.85em;">${lots.length}개 LOT</td>
+                                <td style="padding:10px 14px; text-align:right; font-weight:700;">${formatWeight(totalActual, main)}</td>
+                                <td style="padding:10px 14px; text-align:right; ${validClass}">${totalDev}%</td>
                             </tr>`;
                         lots.forEach((l, idx) => {
-                            const dev = Number(l.weight_deviation || 0).toFixed(1);
                             rowsHtml += `
                                 <tr style="background:rgba(255,255,255,0.02)">
                                     <td style="padding:6px 14px 6px 28px; color:#A0A0A0;">└ LOT ${idx + 1}</td>
                                     <td style="padding:6px 14px; text-align:right; color:#A0A0A0;">-</td>
                                     <td style="padding:6px 14px; font-family:monospace; font-size:0.9em;">${l.material_lot || '-'}</td>
-                                    <td style="padding:6px 14px; text-align:right; font-weight:600;">${formatWeight(l.actual_weight, main)}</td>
-                                    <td style="padding:6px 14px; text-align:right; font-size:0.85em;">${dev}%</td>
+                                    <td style="padding:6px 14px; text-align:right;">${formatWeight(l.actual_weight, main)}</td>
+                                    <td style="padding:6px 14px;"></td>
                                 </tr>`;
                         });
                     }
@@ -5486,50 +5503,103 @@ function t(key) {
                     <p style="color: #A0A0A0; margin-bottom: 20px;">${t('materialInputHistoryDesc')}</p>
             `;
 
-            materials.forEach((material, index) => {
-                const inspection = material.incoming_inspection;
-                const isValid = material.is_valid;
-                const validationBadge = isValid
+            // powder_name 기준으로 그룹핑 (복수 LOT 합산 표시용)
+            const powderGroups = {};
+            materials.forEach(material => {
+                const key = material.powder_name;
+                if (!powderGroups[key]) powderGroups[key] = [];
+                powderGroups[key].push(material);
+            });
+
+            Object.keys(powderGroups).forEach((powderName, groupIndex) => {
+                const group = powderGroups[powderName];
+                // target_weight는 모든 레코드에 동일한 레시피 목표값이 저장되므로 첫 번째 값 사용
+                const targetW = parseFloat(group[0].target_weight || 0);
+                const totalActual = group.reduce((s, m) => s + parseFloat(m.actual_weight || 0), 0);
+                const totalDev = targetW > 0
+                    ? ((totalActual - targetW) / targetW * 100).toFixed(2)
+                    : '0.00';
+                const allValid = group.every(m => m.is_valid);
+                const validationBadge = allValid
                     ? '<span class="badge pass">정상</span>'
                     : '<span class="badge fail">허용오차 초과</span>';
 
-                html += `
-                    <div style="border: 2px solid #333; border-radius: 10px; padding: 20px; margin-bottom: 15px; background: #1E1E1E;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                            <h4 style="margin: 0; font-size: 1.1em;">${index + 1}. ${material.powder_name}</h4>
-                            ${validationBadge}
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; background: white; padding: 15px; border-radius: 5px; color: #000;">
-                            <div>
-                                <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('materialLot')}</p>
-                                <p style="font-weight: 600;">${material.material_lot}</p>
+                if (group.length === 1) {
+                    // 단일 LOT: 기존 레이아웃 유지, 편차만 총량 기준으로 표시
+                    const material = group[0];
+                    const inspections = material.incoming_inspections || (material.incoming_inspection ? [material.incoming_inspection] : []);
+                    html += `
+                        <div style="border: 2px solid #333; border-radius: 10px; padding: 20px; margin-bottom: 15px; background: #1E1E1E;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; font-size: 1.1em;">${groupIndex + 1}. ${powderName}</h4>
+                                ${validationBadge}
                             </div>
-                            <div>
-                                <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('targetWeight')}</p>
-                                <p style="font-weight: 600;">${material.target_weight} kg</p>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; background: white; padding: 15px; border-radius: 5px; color: #000;">
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('materialLot')}</p>
+                                    <p style="font-weight: 600;">${material.material_lot}</p>
+                                </div>
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('targetWeight')}</p>
+                                    <p style="font-weight: 600;">${targetW} kg</p>
+                                </div>
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('actualWeight')}</p>
+                                    <p style="font-weight: 600;">${totalActual.toFixed(3)} kg</p>
+                                </div>
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('weightDeviation')}</p>
+                                    <p style="font-weight: 600; ${allValid ? 'color: #4CAF50;' : 'color: #EF5350;'}">${totalDev}%</p>
+                                </div>
                             </div>
-                            <div>
-                                <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('actualWeight')}</p>
-                                <p style="font-weight: 600;">${material.actual_weight} kg</p>
-                            </div>
-                            <div>
-                                <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('weightDeviation')}</p>
-                                <p style="font-weight: 600; ${isValid ? 'color: #4CAF50;' : 'color: #EF5350;'}">${material.weight_deviation}%</p>
-                            </div>
-                        </div>
-
-                        ${!isValid ? `<p style="color: #EF5350; margin-bottom: 15px; font-weight: 600;">⚠️ ${material.validation_message}</p>` : ''}
-
-                        ${(() => {
-                            const inspections = material.incoming_inspections || (inspection ? [inspection] : []);
-                            if (inspections.length === 0) {
-                                return '<p style="color: #EF5350;">⚠️ 수입검사 기록 없음</p>';
+                            ${inspections.length === 0
+                                ? '<p style="color: #EF5350;">⚠️ 수입검사 기록 없음</p>'
+                                : inspections.map(insp => renderInspectionBlock(insp, inspections.length > 1)).join('')
                             }
-                            return inspections.map(insp => renderInspectionBlock(insp, inspections.length > 1)).join('');
-                        })()}
-                    </div>
-                `;
+                        </div>`;
+                } else {
+                    // 복수 LOT: 합계 헤더 + LOT별 서브섹션 (각 LOT에 검사결과 포함)
+                    let subLotHtml = '';
+                    group.forEach((material, lotIdx) => {
+                        const inspections = material.incoming_inspections || (material.incoming_inspection ? [material.incoming_inspection] : []);
+                        subLotHtml += `
+                            <div style="border-left: 3px solid #555; margin: 12px 0; padding: 12px 16px; background: rgba(255,255,255,0.02); border-radius: 0 6px 6px 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <span style="font-weight: 600; color: #E8E8E8;">LOT ${lotIdx + 1}: <span style="font-family:monospace; color:#F07D00;">${material.material_lot}</span></span>
+                                    <span style="color: #A0A0A0; font-size: 0.9em;">투입량: <strong style="color:#E8E8E8;">${parseFloat(material.actual_weight).toFixed(3)} kg</strong></span>
+                                </div>
+                                ${inspections.length === 0
+                                    ? '<p style="color: #EF5350; font-size:0.9em;">⚠️ 수입검사 기록 없음</p>'
+                                    : inspections.map(insp => renderInspectionBlock(insp, false)).join('')
+                                }
+                            </div>`;
+                    });
+
+                    html += `
+                        <div style="border: 2px solid #333; border-radius: 10px; padding: 20px; margin-bottom: 15px; background: #1E1E1E;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; font-size: 1.1em;">${groupIndex + 1}. ${powderName}
+                                    <span style="font-size:0.8em; color:#A0A0A0; font-weight:400; margin-left:8px;">${group.length}개 LOT</span>
+                                </h4>
+                                ${validationBadge}
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px; background: white; padding: 15px; border-radius: 5px; color: #000;">
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('targetWeight')}</p>
+                                    <p style="font-weight: 600;">${targetW} kg</p>
+                                </div>
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">총 투입량</p>
+                                    <p style="font-weight: 700; font-size: 1.05em;">${totalActual.toFixed(3)} kg</p>
+                                </div>
+                                <div>
+                                    <p style="color: #A0A0A0; margin-bottom: 5px; font-size: 0.9em;">${t('weightDeviation')}</p>
+                                    <p style="font-weight: 600; ${allValid ? 'color: #4CAF50;' : 'color: #EF5350;'}">${totalDev}%</p>
+                                </div>
+                            </div>
+                            ${subLotHtml}
+                        </div>`;
+                }
             });
 
             html += '</div>';
