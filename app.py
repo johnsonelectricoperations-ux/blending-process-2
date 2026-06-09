@@ -3560,7 +3560,18 @@ def trace_by_batch_lot(batch_lot):
                         grouped[key]['actual_weight'] = round(
                             float(grouped[key]['actual_weight']) + per_weight, 3
                         )
+                        grouped[key]['target_weight'] = round(
+                            float(grouped[key]['target_weight']) + per_target, 3
+                        )
+                        if not m.get('is_valid', True):
+                            grouped[key]['is_valid'] = False
             material_inputs = list(grouped.values())
+
+            # 그룹핑 후 합산된 실투입/목표중량으로 weight_deviation 재계산
+            for material in material_inputs:
+                actual = float(material.get('actual_weight') or 0)
+                target = float(material.get('target_weight') or 0)
+                material['weight_deviation'] = round((actual - target) / target * 100, 2) if target > 0 else 0
 
             # 3. 각 원재료의 수입검사 결과 조회 + 재검사 이력
             for material in material_inputs:
