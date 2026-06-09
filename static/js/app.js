@@ -4904,10 +4904,12 @@ function t(key) {
                             powder_name: inp.powder_name,
                             material_lot: inp.material_lot,
                             actual_weight: Number(inp.actual_weight || 0),
+                            target_weight: Number(inp.target_weight || 0),
                             is_valid: !!inp.is_valid
                         };
                     } else {
                         lotMerged[lotKey].actual_weight += Number(inp.actual_weight || 0);
+                        // target_weight는 레시피 총 목표이므로 합산하지 않음
                         if (!inp.is_valid) lotMerged[lotKey].is_valid = false;
                     }
                 });
@@ -4934,7 +4936,7 @@ function t(key) {
                 Object.keys(grouped).forEach(powderName => {
                     const lots = grouped[powderName];  // 고유 LOT별 합산 목록
                     const main = isMain(powderName);
-                    const targetW = recipeMap[powderName] || 0;
+                    const targetW = recipeMap[powderName] || (lots[0] && lots[0].target_weight) || 0;
                     const totalActual = lots.reduce((s, l) => s + l.actual_weight, 0);
                     // 편차는 원재료별 총 투입량 기준으로 계산
                     const totalDev = targetW > 0 ? ((totalActual - targetW) / targetW * 100).toFixed(1) : '0.0';
