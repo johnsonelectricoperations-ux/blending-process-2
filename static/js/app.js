@@ -436,8 +436,14 @@ function t(key) {
             try {
                 const resp = await fetch(`${API_BASE}/api/admin/powder-spec`);
                 const data = await resp.json();
-                if (!data.success || !data.data.length) {
+                if (!data.success) {
                     container.innerHTML = '<div style="color:#888; padding:12px;">등록된 분말이 없습니다.</div>';
+                    return;
+                }
+                // 스캔 규칙은 수입분말에만 적용. 배합분말은 제외한다.
+                const incomingSpecs = data.data.filter(spec => spec.category !== 'mixing');
+                if (!incomingSpecs.length) {
+                    container.innerHTML = '<div style="color:#888; padding:12px;">등록된 수입분말이 없습니다.</div>';
                     return;
                 }
                 let html = `
@@ -458,10 +464,10 @@ function t(key) {
                         </tr>
                     </thead>
                     <tbody>`;
-                data.data.forEach(spec => {
+                incomingSpecs.forEach(spec => {
                     const pos = spec.scan_lot_position || 0;
                     const regex = spec.scan_regex || '';
-                    const catLabel = spec.category === 'mixing' ? '배합분말' : '수입분말';
+                    const catLabel = '수입분말';
                     html += `<tr style="border-bottom:1px solid #333;">
                         <td style="padding:10px 14px; border:1px solid #333; font-weight:600;">${spec.powder_name}</td>
                         <td style="padding:10px 14px; border:1px solid #333; text-align:center; color:#A0A0A0;">${catLabel}</td>
