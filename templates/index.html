@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>배합공정관리 시스템</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
     <!-- QRCode.js for QR code rendering (로컬 번들) -->
     <script defer src="{{ url_for('static', filename='js/qrcode.min.js') }}"></script>
     <!-- ApexCharts for dashboard charts (로컬 번들) -->
@@ -1353,6 +1353,6 @@
         </div>
     </div>
 
-    <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script defer src="{{ static_url('js/app.js') }}"></script>
 </body>
 </html>

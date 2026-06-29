@@ -21,6 +21,30 @@ CORS(app)
 # 정적 파일 브라우저 캐시 설정 (1시간) — 재접속 시 다시 다운로드하지 않음
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
 
+
+@app.context_processor
+def inject_static_versioner():
+    """정적 파일 캐시 무효화용 헬퍼.
+
+    캐시(max-age=3600)로 인해 파일을 수정해도 브라우저가 옛 버전을 계속 사용하는
+    문제를 막기 위해, 파일 수정시각(mtime)을 쿼리스트링(?v=)으로 붙여준다.
+    파일이 바뀌면 URL이 바뀌므로 브라우저가 자동으로 새로 내려받는다.
+    """
+    from flask import url_for
+
+    def static_url(filename):
+        url = url_for('static', filename=filename)
+        try:
+            full_path = os.path.join(app.static_folder, filename)
+            mtime = int(os.path.getmtime(full_path))
+            sep = '&' if '?' in url else '?'
+            return f"{url}{sep}v={mtime}"
+        except OSError:
+            return url
+
+    return dict(static_url=static_url)
+
+
 @app.after_request
 def add_cache_and_gzip(response):
     """캐시 헤더 + gzip 압축 (추가 패키지 불필요, Python 내장 gzip 사용)"""
