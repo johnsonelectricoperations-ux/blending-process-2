@@ -5703,7 +5703,17 @@ function t(key) {
             const hists = insp.inspection_histories || [];
             if (hists.length === 0) return '';
             const rows = hists.map(h => {
-                const failed = (() => { try { return JSON.parse(h.failed_items || '[]').join(', ') || '-'; } catch { return '-'; } })();
+                const failed = (() => {
+                    try {
+                        const items = JSON.parse(h.failed_items || '[]');
+                        let values = {};
+                        try { values = JSON.parse(h.failed_values || '{}') || {}; } catch { values = {}; }
+                        return items.map(item => values[item]
+                            ? `${item} <span style="color:#B0BEC5; font-weight:400;">(${values[item]})</span>`
+                            : item
+                        ).join(', ') || '-';
+                    } catch { return '-'; }
+                })();
                 const rc = h.final_result === 'PASS' ? '#4CAF50' : '#EF5350';
                 return `<tr style="border-bottom:1px solid #333;">
                     <td style="padding:5px 8px; text-align:center;">${h.round}차</td>
@@ -5720,7 +5730,7 @@ function t(key) {
                     <table style="width:100%; border-collapse:collapse; font-size:0.82em;">
                         <thead><tr style="color:#777;">
                             <th style="padding:4px 8px;">회차</th><th style="padding:4px 8px;">검사일</th>
-                            <th style="padding:4px 8px;">검사자</th><th style="padding:4px 8px;">NG 항목</th>
+                            <th style="padding:4px 8px;">검사자</th><th style="padding:4px 8px;">NG 항목 (측정값)</th>
                             <th style="padding:4px 8px;">결과</th><th style="padding:4px 8px;">재검사 사유</th>
                         </tr></thead>
                         <tbody>${rows}</tbody>

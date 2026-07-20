@@ -1030,7 +1030,7 @@ def get_inspection_detail(powder_name, lot_number):
             # 재검사 이력 추가
             cursor.execute('''
                 SELECT round, inspector, inspection_date, final_result,
-                       failed_items, retest_reason, recorded_at
+                       failed_items, failed_values, retest_reason, recorded_at
                 FROM inspection_history
                 WHERE powder_name = ? AND lot_number = ?
                 ORDER BY round ASC
@@ -1799,12 +1799,43 @@ def update_final_result(powder_name, lot_number, conn=None):
             'forming_strength_result': '성형강도', 'forming_load_result': '성형하중',
             'particle_size_result': '입도분석',
         }
+        # NG 항목의 측정값(평균값)을 함께 기록하기 위한 매핑
+        col_avg_map = {
+            'flow_rate_result': ('flow_rate_avg', 's/50g'),
+            'apparent_density_result': ('apparent_density_avg', 'g/cm³'),
+            'c_content_result': ('c_content_avg', '%'),
+            'cu_content_result': ('cu_content_avg', '%'),
+            'moisture_result': ('moisture_avg', '%'),
+            'ash_result': ('ash_avg', '%'),
+            'sinter_change_rate_result': ('sinter_change_rate_avg', '%'),
+            'sinter_strength_result': ('sinter_strength_avg', 'MPa'),
+            'forming_strength_result': ('forming_strength_avg', 'N'),
+            'forming_load_result': ('forming_load_avg', 'MPa'),
+        }
         final_result = 'PASS'
         failed_items = []
+        failed_values = {}
         for col in required_result_columns:
             if result_data.get(col) == 'FAIL':
                 final_result = 'FAIL'
-                failed_items.append(col_label_map.get(col, col))
+                label = col_label_map.get(col, col)
+                failed_items.append(label)
+                if col == 'particle_size_result':
+                    # 입도분석: FAIL인 mesh별 측정값 수집
+                    mesh_vals = []
+                    for key, val in result_data.items():
+                        m = re.match(r'^particle_size_(.+)_result$', key)
+                        if m and val == 'FAIL':
+                            avg = result_data.get(f'particle_size_{m.group(1)}_avg')
+                            if avg is not None:
+                                mesh_vals.append(f"{m.group(1)}: {avg}%")
+                    if mesh_vals:
+                        failed_values[label] = ', '.join(mesh_vals)
+                else:
+                    avg_col, unit = col_avg_map.get(col, (None, ''))
+                    avg = result_data.get(avg_col) if avg_col else None
+                    if avg is not None:
+                        failed_values[label] = f"{avg} {unit}".strip()
 
         # 현재 검사 회차 조회
         current_round = result_data.get('current_round') or 1
@@ -1812,14 +1843,15 @@ def update_final_result(powder_name, lot_number, conn=None):
         # 검사 이력 기록 (PASS/FAIL 모두)
         cursor.execute('''
             INSERT INTO inspection_history
-                (powder_name, lot_number, round, inspector, inspection_date, category, final_result, failed_items)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (powder_name, lot_number, round, inspector, inspection_date, category, final_result, failed_items, failed_values)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             powder_name, lot_number, current_round,
             result_data.get('inspector'), result_data.get('inspection_date'),
             result_data.get('category', 'incoming'),
             final_result,
-            json.dumps(failed_items, ensure_ascii=False)
+            json.dumps(failed_items, ensure_ascii=False),
+            json.dumps(failed_values, ensure_ascii=False)
         ))
 
         # Millsheet 파일 존재 시 경로도 함께 저장
@@ -2578,10 +2610,16 @@ def ensure_inspection_history_table():
                 category    TEXT DEFAULT 'incoming',
                 final_result TEXT,
                 failed_items TEXT,
+                failed_values TEXT,
                 retest_reason TEXT,
                 recorded_at TIMESTAMP DEFAULT (datetime('now','localtime'))
             )
         ''')
+        # 기존 테이블에 failed_values 컬럼이 없으면 추가
+        cursor.execute("PRAGMA table_info(inspection_history)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if 'failed_values' not in cols:
+            cursor.execute('ALTER TABLE inspection_history ADD COLUMN failed_values TEXT')
         conn.commit()
 
 
@@ -3620,7 +3658,7 @@ def trace_by_batch_lot(batch_lot):
                         # 재검사 이력 조회
                         cursor.execute('''
                             SELECT round, inspector, inspection_date, final_result,
-                                   failed_items, retest_reason, recorded_at
+                                   failed_items, failed_values, retest_reason, recorded_at
                             FROM inspection_history
                             WHERE powder_name = ? AND lot_number = ?
                             ORDER BY round ASC
@@ -3682,7 +3720,7 @@ def trace_by_material_lot(material_lot):
             # 재검사 이력 조회
             cursor.execute('''
                 SELECT round, inspector, inspection_date, final_result,
-                       failed_items, retest_reason, recorded_at
+                       failed_items, failed_values, retest_reason, recorded_at
                 FROM inspection_history
                 WHERE powder_name = ? AND lot_number = ?
                 ORDER BY round ASC
