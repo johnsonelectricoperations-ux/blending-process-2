@@ -6493,9 +6493,14 @@ function t(key) {
                     const sMin = spec[`${item.key}_min`];
                     const sMax = spec[`${item.key}_max`];
                     let specText = '규격 미설정';
-                    if (sMin != null && sMax != null) specText = `규격: ${sMin} ~ ${sMax} ${item.unit}`;
-                    else if (sMin != null) specText = `규격: ≥ ${sMin} ${item.unit}`;
-                    else if (sMax != null) specText = `규격: ≤ ${sMax} ${item.unit}`;
+                    if (sMin != null && sMax != null) specText = `현재 규격: ${sMin} ~ ${sMax} ${item.unit}`;
+                    else if (sMin != null) specText = `현재 규격: ≥ ${sMin} ${item.unit}`;
+                    else if (sMax != null) specText = `현재 규격: ≤ ${sMax} ${item.unit}`;
+                    // 표시 기간 중 규격이 변경된 항목 안내
+                    const varied = lots.some(l => l.spec_at &&
+                        ((l.spec_at[`${item.key}_min`] ?? null) !== (sMin ?? null) ||
+                         (l.spec_at[`${item.key}_max`] ?? null) !== (sMax ?? null)));
+                    if (varied) specText += ' <span style="color:#F07D00;">· 기간 중 규격 변경됨</span>';
                     return `
                         <div style="background:#232323; border:1px solid #333; border-radius:8px; padding:12px 14px;">
                             <div style="font-size:0.92em; font-weight:700;">${item.label} <span style="color:#777; font-weight:400; font-size:0.85em;">(${item.unit})</span></div>
@@ -6513,44 +6518,55 @@ function t(key) {
                         el.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:220px; color:#666;">측정 데이터가 없습니다</div>';
                         return;
                     }
-                    const sMin = spec[`${item.key}_min`];
-                    const sMax = spec[`${item.key}_max`];
+
+                    // LOT별 검사 시점에 유효했던 규격 (변경 이력 반영, 계단선으로 표시)
+                    const minArr = lots.map(l => {
+                        const v = (l.spec_at || spec)[`${item.key}_min`];
+                        return v != null ? Number(v) : null;
+                    });
+                    const maxArr = lots.map(l => {
+                        const v = (l.spec_at || spec)[`${item.key}_max`];
+                        return v != null ? Number(v) : null;
+                    });
 
                     // y축 범위: 측정값 + 규격선 포함하여 여유 있게
-                    const nums = values.filter(v => v != null)
-                        .concat(sMin != null ? [Number(sMin)] : [])
-                        .concat(sMax != null ? [Number(sMax)] : []);
+                    const nums = values.concat(minArr, maxArr).filter(v => v != null);
                     const lo = Math.min(...nums), hi = Math.max(...nums);
                     const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 0.1;
 
-                    // 규격 이탈 LOT 빨간 점 강조
+                    // 규격 이탈 LOT 빨간 점 강조 (해당 LOT 시점의 규격 기준)
                     const discrete = [];
                     values.forEach((v, i) => {
                         if (v == null) return;
-                        const ng = (sMin != null && v < Number(sMin)) || (sMax != null && v > Number(sMax));
+                        const ng = (minArr[i] != null && v < minArr[i]) || (maxArr[i] != null && v > maxArr[i]);
                         if (ng) discrete.push({ seriesIndex: 0, dataPointIndex: i, size: 6, fillColor: '#EF5350', strokeColor: '#1B1B1B' });
                     });
 
-                    const yAnnotations = [];
-                    if (sMin != null) yAnnotations.push({ y: Number(sMin), borderColor: '#EF5350', strokeDashArray: 5,
-                        label: { text: `하한 ${sMin}`, position: 'left', offsetX: 8, style: { color: '#EF5350', background: 'transparent', fontSize: '10px' } } });
-                    if (sMax != null) yAnnotations.push({ y: Number(sMax), borderColor: '#EF5350', strokeDashArray: 5,
-                        label: { text: `상한 ${sMax}`, position: 'left', offsetX: 8, style: { color: '#EF5350', background: 'transparent', fontSize: '10px' } } });
+                    const series = [{ name: item.label, data: values }];
+                    const widths = [2.5], curves = ['straight'], dashes = [0], colors = ['#42A5F5'], markerSizes = [4];
+                    if (maxArr.some(v => v != null)) {
+                        series.push({ name: '상한', data: maxArr });
+                        widths.push(1.5); curves.push('stepline'); dashes.push(5); colors.push('#EF5350'); markerSizes.push(0);
+                    }
+                    if (minArr.some(v => v != null)) {
+                        series.push({ name: '하한', data: minArr });
+                        widths.push(1.5); curves.push('stepline'); dashes.push(5); colors.push('#EF5350'); markerSizes.push(0);
+                    }
 
                     const opts = {
-                        series: [{ name: item.label, data: values }],
+                        series,
                         chart: { type: 'line', height: 240, toolbar: { show: false },
                                  foreColor: '#A0A0A0', animations: { enabled: false } },
-                        colors: ['#42A5F5'],
-                        stroke: { width: 2.5, curve: 'straight' },
-                        markers: { size: 4, strokeColors: '#1B1B1B', strokeWidth: 1.5, discrete },
+                        colors,
+                        stroke: { width: widths, curve: curves, dashArray: dashes },
+                        markers: { size: markerSizes, strokeColors: '#1B1B1B', strokeWidth: 1.5, discrete },
+                        legend: { show: false },
                         xaxis: { categories,
                                  labels: { rotate: -45, rotateAlways: true, hideOverlappingLabels: true,
                                            style: { fontSize: '10px', colors: '#A0A0A0' } } },
                         yaxis: { min: lo - pad, max: hi + pad,
                                  labels: { formatter: v => v != null ? Number(v).toFixed(3).replace(/\.?0+$/, '') : '' } },
-                        annotations: { yaxis: yAnnotations },
-                        tooltip: { theme: 'dark',
+                        tooltip: { theme: 'dark', shared: true, intersect: false,
                                    y: { formatter: v => v != null ? `${v} ${item.unit}` : '-' } },
                         grid: { borderColor: '#333' }
                     };

@@ -974,7 +974,7 @@ def get_mixing_trend():
                 except ValueError:
                     pass
 
-            # 규격 (powder_spec)
+            # 현재 규격 (powder_spec)
             cursor.execute('''
                 SELECT apparent_density_min, apparent_density_max,
                        flow_rate_min, flow_rate_max,
@@ -985,7 +985,34 @@ def get_mixing_trend():
             spec_row = cursor.fetchone()
             spec = dict_from_row(spec_row) if spec_row else {}
 
-            return jsonify({'success': True, 'data': {'lots': rows, 'spec': spec}})
+            # 규격 변경 이력 → LOT별 검사 시점에 유효했던 규격 계산
+            cursor.execute(f'''
+                SELECT changed_at, {', '.join(SPEC_TREND_COLUMNS)}
+                FROM powder_spec_history
+                WHERE powder_name = ?
+                ORDER BY changed_at ASC
+            ''', (powder_name,))
+            history = [dict_from_row(h) for h in cursor.fetchall()]
+
+            spec_changed = len(history) > 0
+            for r in rows:
+                if not history:
+                    r['spec_at'] = spec
+                    continue
+                # 검사일 당일의 변경까지 반영 (같은 날 변경 → 해당 규격 적용)
+                lot_dt = (r.get('inspection_date') or '9999-12-31') + ' 23:59:59'
+                effective = None
+                for h in history:
+                    if h['changed_at'] <= lot_dt:
+                        effective = h
+                    else:
+                        break
+                # 첫 이력보다 앞선 LOT은 가장 오래된 규격(변경 전 값) 적용
+                if effective is None:
+                    effective = history[0]
+                r['spec_at'] = {c: effective[c] for c in SPEC_TREND_COLUMNS}
+
+            return jsonify({'success': True, 'data': {'lots': rows, 'spec': spec, 'spec_changed': spec_changed}})
 
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -2054,6 +2081,11 @@ def admin_update_powder_spec(spec_id):
         with closing(get_db()) as conn:
             cursor = conn.cursor()
 
+            # 변경 전 규격 조회 (규격 변경 이력 기록용)
+            cursor.execute('SELECT * FROM powder_spec WHERE id = ?', (spec_id,))
+            old_row = cursor.fetchone()
+            old_spec = dict_from_row(old_row) if old_row else None
+
             cursor.execute('''
                 UPDATE powder_spec SET
                     powder_name = ?,
@@ -2090,6 +2122,9 @@ def admin_update_powder_spec(spec_id):
                 data.get('scan_regex', '') or '',
                 spec_id
             ))
+
+            if old_spec:
+                record_spec_history(cursor, old_spec, data, data.get('powder_name'))
 
             conn.commit()
             return jsonify({'success': True})
@@ -2703,8 +2738,75 @@ def ensure_retest_columns():
         conn.commit()
 
 
+def ensure_powder_spec_history_table():
+    """규격 변경 이력 테이블 생성 (측정값 추이 그래프의 시점별 규격 표시용)"""
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS powder_spec_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                powder_name TEXT NOT NULL,
+                changed_at  TIMESTAMP NOT NULL,
+                apparent_density_min REAL, apparent_density_max REAL,
+                flow_rate_min REAL, flow_rate_max REAL,
+                c_content_min REAL, c_content_max REAL,
+                cu_content_min REAL, cu_content_max REAL
+            )
+        ''')
+        conn.commit()
+
+
+# 추이 그래프에서 이력을 추적하는 규격 컬럼
+SPEC_TREND_COLUMNS = [
+    'apparent_density_min', 'apparent_density_max',
+    'flow_rate_min', 'flow_rate_max',
+    'c_content_min', 'c_content_max',
+    'cu_content_min', 'cu_content_max',
+]
+
+
+def _spec_num(v):
+    """규격값 비교용 정규화 (빈값→None, 숫자→float)"""
+    if v is None or v == '':
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def record_spec_history(cursor, old_spec, new_data, powder_name):
+    """규격 수정 시 추적 대상 컬럼이 변경되었으면 이력 기록.
+
+    최초 변경 시에는 변경 전 값을 과거 시점(2000-01-01)으로 함께 기록하여
+    이력 도입 이전 LOT들이 변경 전 규격으로 표시되도록 한다.
+    """
+    old_vals = {c: _spec_num(old_spec.get(c)) for c in SPEC_TREND_COLUMNS}
+    new_vals = {c: _spec_num(new_data.get(c)) for c in SPEC_TREND_COLUMNS}
+    if old_vals == new_vals:
+        return
+
+    old_name = old_spec.get('powder_name')
+    if old_name and old_name != powder_name:
+        cursor.execute('UPDATE powder_spec_history SET powder_name = ? WHERE powder_name = ?',
+                       (powder_name, old_name))
+
+    cursor.execute('SELECT COUNT(*) FROM powder_spec_history WHERE powder_name = ?', (powder_name,))
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(f'''
+            INSERT INTO powder_spec_history (powder_name, changed_at, {', '.join(SPEC_TREND_COLUMNS)})
+            VALUES (?, '2000-01-01 00:00:00', {', '.join(['?'] * len(SPEC_TREND_COLUMNS))})
+        ''', [powder_name] + [old_vals[c] for c in SPEC_TREND_COLUMNS])
+
+    cursor.execute(f'''
+        INSERT INTO powder_spec_history (powder_name, changed_at, {', '.join(SPEC_TREND_COLUMNS)})
+        VALUES (?, datetime('now','localtime'), {', '.join(['?'] * len(SPEC_TREND_COLUMNS))})
+    ''', [powder_name] + [new_vals[c] for c in SPEC_TREND_COLUMNS])
+
+
 ensure_inspection_history_table()
 ensure_retest_columns()
+ensure_powder_spec_history_table()
 
 # ---------------------------------------------------------------------------
 # Millsheet 업로드 API
