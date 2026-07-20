@@ -6429,12 +6429,17 @@ function t(key) {
             { key: 'cu_content',       label: 'Cu 함량',    unit: '%' },
         ];
 
-        async function openTrendModal() {
-            const modal = document.getElementById('trendModal');
-            if (!modal) return;
-            modal.style.display = 'flex';
+        // 검사결과 조회 소메뉴 탭 전환 (수입검사 탭과 동일한 구조)
+        function showSearchTab(tab) {
+            document.querySelectorAll('#search .admin-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#search .admin-tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`searchTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+            document.getElementById(`searchTab${tab.charAt(0).toUpperCase() + tab.slice(1)}Content`).classList.add('active');
+            if (tab === 'trend') initTrendTab();
+        }
 
-            // 배합분말 목록 로드 (최초 1회)
+        // 측정값 추이 탭 진입 시 배합분말 목록 로드 (최초 1회)
+        async function initTrendTab() {
             const sel = document.getElementById('trendPowderSelect');
             if (sel && sel.options.length <= 1) {
                 try {
@@ -6450,11 +6455,6 @@ function t(key) {
                     }
                 } catch (e) { console.error('배합분말 목록 로드 실패:', e); }
             }
-        }
-
-        function closeTrendModal() {
-            const modal = document.getElementById('trendModal');
-            if (modal) modal.style.display = 'none';
         }
 
         async function loadTrendCharts() {
