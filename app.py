@@ -164,12 +164,27 @@ def get_powder_list():
     """분말 목록 조회 (category 파라미터로 필터링 가능)"""
     try:
         category = request.args.get('category', None)
+        # with_inspection=true: 측정값이 있는 검사 결과가 존재하는 분말만 반환
+        with_inspection = request.args.get('with_inspection', 'false').lower() == 'true'
         with closing(get_db()) as conn:
             cursor = conn.cursor()
+            query = 'SELECT powder_name FROM powder_spec WHERE 1=1'
+            params = []
             if category:
-                cursor.execute('SELECT powder_name FROM powder_spec WHERE category = ? ORDER BY powder_name', (category,))
-            else:
-                cursor.execute('SELECT powder_name FROM powder_spec ORDER BY powder_name')
+                query += ' AND category = ?'
+                params.append(category)
+            if with_inspection:
+                query += '''
+                    AND EXISTS (
+                        SELECT 1 FROM inspection_result ir
+                        WHERE ir.powder_name = powder_spec.powder_name
+                          AND ir.category = powder_spec.category
+                          AND (ir.is_hidden IS NULL OR ir.is_hidden = 0)
+                          AND (ir.apparent_density_avg IS NOT NULL OR ir.flow_rate_avg IS NOT NULL
+                               OR ir.c_content_avg IS NOT NULL OR ir.cu_content_avg IS NOT NULL)
+                    )'''
+            query += ' ORDER BY powder_name'
+            cursor.execute(query, params)
             powders = [row[0] for row in cursor.fetchall()]
             return jsonify({'success': True, 'data': powders})
     except Exception as e:

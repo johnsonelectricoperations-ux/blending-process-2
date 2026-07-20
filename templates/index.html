@@ -817,15 +817,15 @@
             <div id="searchTabTrendContent" class="admin-tab-content">
                 <div class="card">
                     <div class="card-title">📈 배합분말 측정값 추이 (LOT별 누적)</div>
-                    <div style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:18px;">
-                        <div>
-                            <label style="display:block; font-size:0.82em; color:#A0A0A0; margin-bottom:4px;">배합분말 선택</label>
-                            <select id="trendPowderSelect" style="min-width:220px;">
+                    <div style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+                        <div class="form-group" style="min-width:240px;">
+                            <label>배합분말 선택</label>
+                            <select id="trendPowderSelect">
                                 <option value="">-- 분말 선택 --</option>
                             </select>
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.82em; color:#A0A0A0; margin-bottom:4px;">기간</label>
+                        <div class="form-group" style="min-width:140px;">
+                            <label>기간</label>
                             <select id="trendMonths">
                                 <option value="">전체</option>
                                 <option value="3">최근 3개월</option>
@@ -833,16 +833,16 @@
                                 <option value="12">최근 1년</option>
                             </select>
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.82em; color:#A0A0A0; margin-bottom:4px;">표시 개수</label>
+                        <div class="form-group" style="min-width:140px;">
+                            <label>표시 개수</label>
                             <select id="trendLimit">
                                 <option value="20">최근 20 LOT</option>
                                 <option value="50">최근 50 LOT</option>
                                 <option value="">전체</option>
                             </select>
                         </div>
-                        <button class="btn" onclick="loadTrendCharts()" style="padding:8px 20px;">조회</button>
-                        <span id="trendSummary" style="font-size:0.82em; color:#888; margin-left:auto; align-self:center;"></span>
+                        <button class="btn" onclick="loadTrendCharts()" style="padding:10px 20px; margin-bottom:15px; white-space:nowrap;">조회</button>
+                        <span id="trendSummary" style="font-size:0.82em; color:#888; margin-left:auto; margin-bottom:20px;"></span>
                     </div>
                     <div id="trendChartsGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
                         <div class="empty-message" style="grid-column:1/-1;">배합분말을 선택하고 조회 버튼을 클릭하세요</div>

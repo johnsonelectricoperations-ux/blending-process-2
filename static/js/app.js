@@ -6443,7 +6443,7 @@ function t(key) {
             const sel = document.getElementById('trendPowderSelect');
             if (sel && sel.options.length <= 1) {
                 try {
-                    const res = await fetch(`${API_BASE}/api/powder-list?category=mixing`);
+                    const res = await fetch(`${API_BASE}/api/powder-list?category=mixing&with_inspection=true`);
                     const data = await res.json();
                     if (data.success) {
                         data.data.forEach(name => {
