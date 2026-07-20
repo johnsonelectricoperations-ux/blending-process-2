@@ -924,6 +924,73 @@ def search_inspection_results():
         return jsonify({'success': False, 'message': str(e)})
 
 # ============================================
+# API: 배합분말 측정값 추이 (LOT별 누적)
+# ============================================
+
+@app.route('/api/mixing-trend', methods=['GET'])
+def get_mixing_trend():
+    """배합분말 LOT별 측정값 추이 조회 (겉보기밀도/유동도/C함량/Cu함량 + 규격)"""
+    try:
+        powder_name = request.args.get('powder_name', '').strip()
+        months = request.args.get('months', '')   # 최근 N개월 (빈값=전체)
+        limit  = request.args.get('limit', '')    # 최근 N개 LOT (빈값=전체)
+
+        if not powder_name:
+            return jsonify({'success': False, 'message': '분말명을 선택하세요.'})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+
+            query = '''
+                SELECT lot_number, inspection_date, inspection_time,
+                       apparent_density_avg, flow_rate_avg, c_content_avg, cu_content_avg
+                FROM inspection_result
+                WHERE powder_name = ? AND category = 'mixing'
+                  AND (is_hidden IS NULL OR is_hidden = 0)
+            '''
+            params = [powder_name]
+
+            if months:
+                try:
+                    query += " AND inspection_date >= date('now', ?)"
+                    params.append(f'-{int(months)} months')
+                except ValueError:
+                    pass
+
+            query += ' ORDER BY inspection_date ASC, rowid ASC'
+            cursor.execute(query, params)
+            rows = [dict_from_row(r) for r in cursor.fetchall()]
+
+            # 4개 측정값이 모두 없는 행은 제외
+            value_cols = ['apparent_density_avg', 'flow_rate_avg', 'c_content_avg', 'cu_content_avg']
+            rows = [r for r in rows if any(r.get(c) is not None for c in value_cols)]
+
+            # 최근 N개 LOT만 (시간순 정렬 유지)
+            if limit:
+                try:
+                    n = int(limit)
+                    if n > 0:
+                        rows = rows[-n:]
+                except ValueError:
+                    pass
+
+            # 규격 (powder_spec)
+            cursor.execute('''
+                SELECT apparent_density_min, apparent_density_max,
+                       flow_rate_min, flow_rate_max,
+                       c_content_min, c_content_max,
+                       cu_content_min, cu_content_max
+                FROM powder_spec WHERE powder_name = ?
+            ''', (powder_name,))
+            spec_row = cursor.fetchone()
+            spec = dict_from_row(spec_row) if spec_row else {}
+
+            return jsonify({'success': True, 'data': {'lots': rows, 'spec': spec}})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+# ============================================
 # API: 검사 결과 삭제
 # ============================================
 

@@ -6418,6 +6418,151 @@ function t(key) {
             }
         }
 
+        // ============================================
+        // 배합분말 측정값 추이 모달
+        // ============================================
+        let trendCharts = {};
+        const TREND_ITEMS = [
+            { key: 'apparent_density', label: '겉보기밀도', unit: 'g/cm³' },
+            { key: 'flow_rate',        label: '유동도',     unit: 's/50g' },
+            { key: 'c_content',        label: 'C 함량',     unit: '%' },
+            { key: 'cu_content',       label: 'Cu 함량',    unit: '%' },
+        ];
+
+        async function openTrendModal() {
+            const modal = document.getElementById('trendModal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+
+            // 배합분말 목록 로드 (최초 1회)
+            const sel = document.getElementById('trendPowderSelect');
+            if (sel && sel.options.length <= 1) {
+                try {
+                    const res = await fetch(`${API_BASE}/api/powder-list?category=mixing`);
+                    const data = await res.json();
+                    if (data.success) {
+                        data.data.forEach(name => {
+                            const opt = document.createElement('option');
+                            opt.value = name;
+                            opt.textContent = name;
+                            sel.appendChild(opt);
+                        });
+                    }
+                } catch (e) { console.error('배합분말 목록 로드 실패:', e); }
+            }
+        }
+
+        function closeTrendModal() {
+            const modal = document.getElementById('trendModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function loadTrendCharts() {
+            const powderName = document.getElementById('trendPowderSelect')?.value || '';
+            if (!powderName) { alert('배합분말을 선택하세요.'); return; }
+            const months = document.getElementById('trendMonths')?.value || '';
+            const limit  = document.getElementById('trendLimit')?.value || '';
+            const grid    = document.getElementById('trendChartsGrid');
+            const summary = document.getElementById('trendSummary');
+
+            grid.innerHTML = '<div class="empty-message" style="grid-column:1/-1;">불러오는 중...</div>';
+            summary.textContent = '';
+
+            try {
+                const params = new URLSearchParams({ powder_name: powderName });
+                if (months) params.set('months', months);
+                if (limit)  params.set('limit', limit);
+                const res  = await fetch(`${API_BASE}/api/mixing-trend?${params}`);
+                const data = await res.json();
+                if (!data.success) { grid.innerHTML = `<div class="empty-message" style="grid-column:1/-1; color:#EF9A9A;">${data.message}</div>`; return; }
+
+                const lots = data.data.lots || [];
+                const spec = data.data.spec || {};
+                if (lots.length === 0) {
+                    grid.innerHTML = '<div class="empty-message" style="grid-column:1/-1;">표시할 검사 데이터가 없습니다.</div>';
+                    return;
+                }
+
+                const dates = lots.map(l => l.inspection_date).filter(Boolean);
+                summary.textContent = `총 ${lots.length}개 LOT${dates.length ? ` · ${dates[0]} ~ ${dates[dates.length - 1]}` : ''}`;
+
+                // 기존 차트 제거 후 카드 생성
+                Object.values(trendCharts).forEach(c => { try { c.destroy(); } catch {} });
+                trendCharts = {};
+                grid.innerHTML = TREND_ITEMS.map(item => {
+                    const sMin = spec[`${item.key}_min`];
+                    const sMax = spec[`${item.key}_max`];
+                    let specText = '규격 미설정';
+                    if (sMin != null && sMax != null) specText = `규격: ${sMin} ~ ${sMax} ${item.unit}`;
+                    else if (sMin != null) specText = `규격: ≥ ${sMin} ${item.unit}`;
+                    else if (sMax != null) specText = `규격: ≤ ${sMax} ${item.unit}`;
+                    return `
+                        <div style="background:#232323; border:1px solid #333; border-radius:8px; padding:12px 14px;">
+                            <div style="font-size:0.92em; font-weight:700;">${item.label} <span style="color:#777; font-weight:400; font-size:0.85em;">(${item.unit})</span></div>
+                            <div style="font-size:0.75em; color:#888; margin-bottom:6px;">${specText}</div>
+                            <div id="trendChart_${item.key}"></div>
+                        </div>`;
+                }).join('');
+
+                const categories = lots.map(l => l.lot_number);
+
+                TREND_ITEMS.forEach(item => {
+                    const el = document.getElementById(`trendChart_${item.key}`);
+                    const values = lots.map(l => l[`${item.key}_avg`] != null ? Number(l[`${item.key}_avg`]) : null);
+                    if (values.every(v => v == null)) {
+                        el.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:220px; color:#666;">측정 데이터가 없습니다</div>';
+                        return;
+                    }
+                    const sMin = spec[`${item.key}_min`];
+                    const sMax = spec[`${item.key}_max`];
+
+                    // y축 범위: 측정값 + 규격선 포함하여 여유 있게
+                    const nums = values.filter(v => v != null)
+                        .concat(sMin != null ? [Number(sMin)] : [])
+                        .concat(sMax != null ? [Number(sMax)] : []);
+                    const lo = Math.min(...nums), hi = Math.max(...nums);
+                    const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 0.1;
+
+                    // 규격 이탈 LOT 빨간 점 강조
+                    const discrete = [];
+                    values.forEach((v, i) => {
+                        if (v == null) return;
+                        const ng = (sMin != null && v < Number(sMin)) || (sMax != null && v > Number(sMax));
+                        if (ng) discrete.push({ seriesIndex: 0, dataPointIndex: i, size: 6, fillColor: '#EF5350', strokeColor: '#1B1B1B' });
+                    });
+
+                    const yAnnotations = [];
+                    if (sMin != null) yAnnotations.push({ y: Number(sMin), borderColor: '#EF5350', strokeDashArray: 5,
+                        label: { text: `하한 ${sMin}`, position: 'left', offsetX: 8, style: { color: '#EF5350', background: 'transparent', fontSize: '10px' } } });
+                    if (sMax != null) yAnnotations.push({ y: Number(sMax), borderColor: '#EF5350', strokeDashArray: 5,
+                        label: { text: `상한 ${sMax}`, position: 'left', offsetX: 8, style: { color: '#EF5350', background: 'transparent', fontSize: '10px' } } });
+
+                    const opts = {
+                        series: [{ name: item.label, data: values }],
+                        chart: { type: 'line', height: 240, toolbar: { show: false },
+                                 foreColor: '#A0A0A0', animations: { enabled: false } },
+                        colors: ['#42A5F5'],
+                        stroke: { width: 2.5, curve: 'straight' },
+                        markers: { size: 4, strokeColors: '#1B1B1B', strokeWidth: 1.5, discrete },
+                        xaxis: { categories,
+                                 labels: { rotate: -45, rotateAlways: true, hideOverlappingLabels: true,
+                                           style: { fontSize: '10px', colors: '#A0A0A0' } } },
+                        yaxis: { min: lo - pad, max: hi + pad,
+                                 labels: { formatter: v => v != null ? Number(v).toFixed(3).replace(/\.?0+$/, '') : '' } },
+                        annotations: { yaxis: yAnnotations },
+                        tooltip: { theme: 'dark',
+                                   y: { formatter: v => v != null ? `${v} ${item.unit}` : '-' } },
+                        grid: { borderColor: '#333' }
+                    };
+                    trendCharts[item.key] = new ApexCharts(el, opts);
+                    trendCharts[item.key].render();
+                });
+            } catch (e) {
+                console.error('측정값 추이 로드 실패:', e);
+                grid.innerHTML = `<div class="empty-message" style="grid-column:1/-1; color:#EF9A9A;">불러오기 실패: ${e.message}</div>`;
+            }
+        }
+
         // KPI 카드 로드
         async function loadDashboardKPI() {
             try {
