@@ -395,8 +395,17 @@ def _do_start_inspection():
             progress_data = dict_from_row(progress_row)
             items = get_inspection_items(powder_name, progress_data['inspection_type'], conn)
 
+            # 진행중 검사의 대상 항목(total_items)으로 필터링
+            # (재검사 시 NG 항목만 저장되므로 이어하기에서도 NG 항목만 표시)
+            progress_item_names = json.loads(progress_data.get('total_items') or '[]')
+            if progress_item_names:
+                filtered = [it for it in items if it['name'] in progress_item_names]
+                if filtered:
+                    items = filtered
+
             # 이미 저장된 측정값들을 가져오기
             saved_values = {}
+            retest_round = 1
             cursor.execute('''
                 SELECT * FROM inspection_result
                 WHERE powder_name = ? AND lot_number = ?
@@ -405,6 +414,7 @@ def _do_start_inspection():
             result_row = cursor.fetchone()
             if result_row:
                 result_data = dict_from_row(result_row)
+                retest_round = (result_data.get('current_round') or 1)
 
                 # 컬럼명 매핑 (save_inspection_item 함수와 동일)
                 column_map = {
@@ -487,7 +497,9 @@ def _do_start_inspection():
                     'totalItems': json.loads(progress_data['total_items'] or '[]'),
                     'progress': progress_data['progress'],
                     'category': progress_data.get('category', 'incoming'),
-                    'inspectionDate': progress_data.get('inspection_date')
+                    'inspectionDate': progress_data.get('inspection_date'),
+                    'isRetest': retest_round > 1,
+                    'currentRound': retest_round
                 },
                 'items': items,
                 'savedValues': saved_values  # 저장된 측정값 추가
@@ -521,6 +533,38 @@ def _do_start_inspection():
 
         # 3. 새 검사 시작
         items = get_inspection_items(powder_name, inspection_type, conn)
+
+        # 재검사(2회차 이상)인 경우: 이전 회차에서 NG(FAIL)였던 항목만 검사
+        # (final_result는 재검사 요청 시 NULL로 초기화되지만, 각 항목별 _result 컬럼은
+        #  이전 회차 값을 유지하므로 이를 기준으로 NG 항목만 필터링한다)
+        is_retest = False
+        cursor.execute('''
+            SELECT * FROM inspection_result
+            WHERE powder_name = ? AND lot_number = ?
+        ''', (powder_name, lot_number))
+        prev_result_row = cursor.fetchone()
+        if prev_result_row:
+            prev_result = dict_from_row(prev_result_row)
+            if (prev_result.get('current_round') or 1) > 1:
+                item_result_col = {
+                    'FlowRate': 'flow_rate_result',
+                    'ApparentDensity': 'apparent_density_result',
+                    'CContent': 'c_content_result',
+                    'CuContent': 'cu_content_result',
+                    'Moisture': 'moisture_result',
+                    'Ash': 'ash_result',
+                    'SinterChangeRate': 'sinter_change_rate_result',
+                    'SinterStrength': 'sinter_strength_result',
+                    'FormingStrength': 'forming_strength_result',
+                    'FormingLoad': 'forming_load_result',
+                    'ParticleSize': 'particle_size_result',
+                }
+                ng_items = [it for it in items
+                            if prev_result.get(item_result_col.get(it['name'])) == 'FAIL']
+                # NG 항목이 하나라도 식별되면 해당 항목만 재검사 대상으로 표시
+                if ng_items:
+                    items = ng_items
+                    is_retest = True
 
         if not items:
             # 일상검사 항목이 없는 분말 → Millsheet 확인 후 즉시 합격 처리
@@ -579,7 +623,9 @@ def _do_start_inspection():
                 'completedItems': [],
                 'totalItems': item_names,
                 'category': category,
-                'inspectionDate': inspection_date
+                'inspectionDate': inspection_date,
+                'isRetest': is_retest,
+                'currentRound': (prev_result.get('current_round') if prev_result_row else 1) or 1
             },
             'items': items
         })

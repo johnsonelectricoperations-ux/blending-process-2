@@ -1141,6 +1141,18 @@ function t(key) {
             const total = currentInspection.totalItems || [];
             document.getElementById('infoProgress').textContent = `${completed.length}/${total.length}`;
 
+            // 재검사(NG 항목만 검사) 안내 배너
+            const retestNotice = document.getElementById('retestNotice');
+            if (retestNotice) {
+                if (currentInspection.isRetest) {
+                    const round = currentInspection.currentRound || 2;
+                    retestNotice.textContent = `🔄 재검사 (${round}차) — 이전 검사에서 NG였던 항목만 표시됩니다. (합격 항목은 재검사하지 않습니다)`;
+                    retestNotice.style.display = 'block';
+                } else {
+                    retestNotice.style.display = 'none';
+                }
+            }
+
             renderInspectionItems();
             showPage('inspection');
         }
