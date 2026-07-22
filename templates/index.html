@@ -34,7 +34,8 @@
             color: #000;
         }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PDF.js (로컬 번들 — 인터넷 접속 불필요) -->
+    <script src="{{ url_for('static', filename='js/pdf.min.js') }}"></script>
 </head>
 <body>
     <!-- 스플래시(대문) 화면 -->

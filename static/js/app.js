@@ -3,10 +3,9 @@
 // API Base URL
 const API_BASE = '';
 
-// PDF.js worker 설정
+// PDF.js worker 설정 (로컬 번들 — 인터넷 접속 불필요)
 if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.min.js';
 }
 
 // Millsheet 상태
