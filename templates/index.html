@@ -234,6 +234,7 @@
 
             <!-- 탭 1: 검사 시작 (기존) -->
             <div id="incomingTabManualContent" class="admin-tab-content active">
+            <div id="cContentMasterBar-incoming"></div>
             <div class="card">
                 <div class="card-title" data-i18n="inspectionInfo">검사 정보 입력</div>
                 <form id="incomingForm">
@@ -405,6 +406,7 @@
                 <h2 data-i18n="mixingTitle">배합검사 시작</h2>
                 <p data-i18n="mixingDesc">배합 분말의 검사를 시작합니다. 모든 필수 항목을 입력하세요</p>
             </div>
+            <div id="cContentMasterBar-mixing"></div>
             <div class="card">
                 <h3>완료된 배합작업 (배합검사 대상)</h3>
                 <div id="mixingCompletedList">로딩 중...</div>
@@ -929,6 +931,26 @@
 
             <!-- 탭 1: 분말사양관리 -->
             <div id="powder-spec-tab" class="admin-tab-content active">
+
+            <!-- C함량 Master 실제값 관리 -->
+            <div class="card">
+                <div class="card-title">🧪 C함량 Master 실제값 관리</div>
+                <p style="color: var(--text-secondary); font-size: 0.88em; margin-bottom: 14px; line-height:1.6;">
+                    C함량 분석 시 매회 함께 측정하는 Master 시료의 <b>실제(고정) 값</b>입니다.<br>
+                    작업자는 검사 목록 화면에서 이 값을 기준으로 그날 Master 측정 편차를 입력하며,
+                    C함량 목표 중앙값이 0.3% 이하인 분말의 측정값이 이 편차만큼 자동 보정되어 판정됩니다.
+                </p>
+                <div style="display:flex; gap:14px; align-items:end; flex-wrap:wrap;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>현재 실제값 (%)</label>
+                        <input type="number" step="0.01" id="cContentMasterActualInput" placeholder="예: 0.19" style="max-width:160px;">
+                    </div>
+                    <button class="btn" style="margin-bottom:1px;" onclick="saveCContentMasterActual()">저장</button>
+                    <span id="cContentMasterActualCurrent" style="color:#888; font-size:0.85em;"></span>
+                </div>
+                <div id="cContentMasterActualHistory" style="margin-top:12px;"></div>
+            </div>
+
             <!-- 분말 사양 관리 -->
             <div class="card">
                 <div class="card-title">⚙️ <span data-i18n="powderSpecManagement">분말 사양 관리</span></div>

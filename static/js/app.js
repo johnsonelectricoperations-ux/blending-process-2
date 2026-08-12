@@ -152,6 +152,8 @@ let currentItems = [];
 let currentSavedValues = {}; // 저장된 측정값
 // 임시 판정 결과 저장
 let pendingResults = {};
+// C함량 Master 보정: 현재 적용 중인 분석 배치 상태 ({ actualValue, batch } 또는 null)
+let currentCContentMaster = null;
 
 // 안전한 이벤트 리스너 추가 헬퍼 함수
 function safeAddEventListener(elementId, eventType, handler) {
@@ -340,6 +342,7 @@ function t(key) {
                 loadPowderList('incoming');
                 loadInspectorList('incoming');
                 loadIncomingIncompleteInspections();
+                initCContentMasterBar('cContentMasterBar-incoming');
 
                 // 수입검사 폼 초기화
                 const incomingForm = document.getElementById('incomingForm');
@@ -355,6 +358,7 @@ function t(key) {
             } else if (pageName === 'mixing') {
                 // mixing 페이지는 완료된 배합작업 목록만 보여줌
                 loadMixingPage();
+                initCContentMasterBar('cContentMasterBar-mixing');
             } else if (pageName === 'blending') {
                 // hide form initially so only orders list shows
                 hideBlendingForm();
@@ -560,6 +564,74 @@ function t(key) {
 
             // 로드 및 필터링
             loadPowderSpecs(mode);
+            loadCContentMasterActualSetting();
+        }
+
+        // ============================================
+        // C함량 Master 실제값 관리 (관리자모드)
+        // ============================================
+
+        async function loadCContentMasterActualSetting() {
+            const currentEl = document.getElementById('cContentMasterActualCurrent');
+            const histEl = document.getElementById('cContentMasterActualHistory');
+            if (!currentEl || !histEl) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/c-content-master/actual`);
+                const data = await res.json();
+                if (!data.success) return;
+
+                const { current, history } = data.data;
+                const input = document.getElementById('cContentMasterActualInput');
+                if (input) input.value = current !== null && current !== undefined ? current : '';
+                currentEl.textContent = current !== null && current !== undefined
+                    ? `현재 적용값: ${current}%` : '설정되지 않음';
+
+                if (!history || history.length === 0) {
+                    histEl.innerHTML = '';
+                    return;
+                }
+                const rows = history.map(h => `
+                    <tr style="border-bottom:1px solid #333;">
+                        <td style="padding:5px 8px;">${h.actual_value}%</td>
+                        <td style="padding:5px 8px; color:#888;">${h.changed_at}</td>
+                        <td style="padding:5px 8px; color:#888;">${h.changed_by || '-'}</td>
+                    </tr>`).join('');
+                histEl.innerHTML = `
+                    <p style="font-size:0.82em; color:#A0A0A0; margin-bottom:6px;">변경 이력</p>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.85em; max-width:520px;">
+                        <thead><tr style="color:#777;">
+                            <th style="padding:4px 8px; text-align:left;">실제값</th>
+                            <th style="padding:4px 8px; text-align:left;">변경일시</th>
+                            <th style="padding:4px 8px; text-align:left;">변경자</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>`;
+            } catch (e) {
+                console.error('C함량 Master 실제값 조회 실패:', e);
+            }
+        }
+
+        async function saveCContentMasterActual() {
+            const input = document.getElementById('cContentMasterActualInput');
+            const value = input?.value;
+            if (value === '' || value === undefined || value === null) {
+                alert('실제값을 입력하세요.');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/c-content-master/actual`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actual_value: value, changed_by: currentUserName || currentUserId || '' })
+                });
+                const data = await res.json();
+                if (!data.success) { alert('저장 실패: ' + data.message); return; }
+                alert('✓ Master 실제값이 저장되었습니다.');
+                await loadCContentMasterActualSetting();
+            } catch (e) {
+                alert('오류: ' + e.message);
+            }
         }
 
         // ============================================
@@ -1152,8 +1224,141 @@ function t(key) {
                 }
             }
 
+            // C함량 Master 보정 대상 항목이 있으면 현재 적용 중인 Master 상태를 미리 로드
+            if (currentItems.some(i => i.name === 'CContent' && i.needsMasterCorrection)) {
+                await loadCContentMasterStatus();
+            }
+
             renderInspectionItems();
             showPage('inspection');
+        }
+
+        // 현재 적용 중인 C함량 Master 배치 상태 조회
+        async function loadCContentMasterStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/c-content-master/status`);
+                const data = await res.json();
+                currentCContentMaster = data.success ? data.data : null;
+            } catch (e) {
+                console.error('C함량 Master 상태 조회 실패:', e);
+                currentCContentMaster = null;
+            }
+        }
+
+        // ============================================
+        // C함량 Master 상태바 (수입/배합 목록 화면 상단, 공용)
+        // ============================================
+
+        async function initCContentMasterBar(containerId) {
+            await loadCContentMasterStatus();
+            renderCContentMasterBar(containerId);
+        }
+
+        function renderCContentMasterBar(containerId) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+
+            const m = currentCContentMaster;
+
+            if (!m || m.actualValue === null || m.actualValue === undefined) {
+                el.innerHTML = `
+                    <div class="card" style="padding:12px 16px; margin-bottom:16px; background:rgba(158,158,158,0.10); border:1px solid #666; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="color:#BDBDBD;">⚪ C함량 Master 실제값이 설정되지 않았습니다.</span>
+                        <span style="color:#888; font-size:0.85em;">관리자모드 &gt; 배합분말관리에서 Master 실제값을 먼저 설정하세요.</span>
+                    </div>`;
+                return;
+            }
+
+            if (!m.batch) {
+                el.innerHTML = `
+                    <div class="card" style="padding:12px 16px; margin-bottom:16px; background:rgba(240,125,0,0.10); border:1px solid #F07D00; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="color:#FFB74D;">🟠 C함량 Master 미입력 — 오늘 분석분의 Master 값을 입력하세요.</span>
+                        <button class="btn" style="padding:6px 14px; font-size:0.88em;" onclick="openCContentMasterPanel('${containerId}')">Master 입력</button>
+                    </div>
+                    <div id="${containerId}-panel"></div>`;
+                return;
+            }
+
+            const b = m.batch;
+            const sign = b.bias >= 0 ? '+' : '';
+            el.innerHTML = `
+                <div class="card" style="padding:12px 16px; margin-bottom:16px; background:rgba(76,175,80,0.10); border:1px solid #4CAF50; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="color:#A5D6A7;">🟢 C함량 Master 적용 중</span>
+                    <span style="color:#E8E8E8; font-size:0.9em;">실제 ${b.actual_value}% · 측정평균 ${b.measured_avg}% · 편차 ${sign}${b.bias}%</span>
+                    <span style="color:#888; font-size:0.82em;">${b.created_at}${b.created_by ? ' · ' + b.created_by : ''}</span>
+                    <button class="btn secondary" style="padding:6px 14px; font-size:0.88em; margin-left:auto;" onclick="openCContentMasterPanel('${containerId}')">갱신</button>
+                </div>
+                <div id="${containerId}-panel"></div>`;
+        }
+
+        function openCContentMasterPanel(containerId) {
+            const panel = document.getElementById(`${containerId}-panel`);
+            if (!panel) return;
+            const actualValue = currentCContentMaster ? currentCContentMaster.actualValue : null;
+
+            panel.innerHTML = `
+                <div class="card" style="margin-bottom:16px; border:1px solid #444;">
+                    <div class="card-title" style="margin-bottom:12px;">C함량 Master 입력</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; align-items:end; max-width:560px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Master 실제값 (%)</label>
+                            <input type="text" value="${actualValue}" disabled style="opacity:0.7;">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>측정 1차 (%)</label>
+                            <input type="number" step="0.01" id="${containerId}-m1">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>측정 2차 (%)</label>
+                            <input type="number" step="0.01" id="${containerId}-m2">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:14px;">
+                        <button class="btn" onclick="submitCContentMasterBatch('${containerId}')">적용</button>
+                        <button class="btn secondary" onclick="renderCContentMasterBar('${containerId}')">취소</button>
+                    </div>
+                </div>`;
+        }
+
+        async function submitCContentMasterBatch(containerId) {
+            const m1 = document.getElementById(`${containerId}-m1`)?.value;
+            const m2 = document.getElementById(`${containerId}-m2`)?.value;
+            if (!m1 || !m2) { alert('Master 측정값 2회를 모두 입력하세요.'); return; }
+
+            try {
+                const res = await fetch(`${API_BASE}/api/c-content-master/batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ measure1: m1, measure2: m2, createdBy: currentUserName || currentUserId || '' })
+                });
+                const data = await res.json();
+                if (!data.success) { alert('Master 입력 실패: ' + data.message); return; }
+
+                currentCContentMaster = data.data;
+                renderCContentMasterBar(containerId);
+                alert(`✓ Master 적용됨 (편차 ${data.data.batch.bias >= 0 ? '+' : ''}${data.data.batch.bias}%)`);
+            } catch (e) {
+                alert('오류: ' + e.message);
+            }
+        }
+
+        // C함량 Master 보정 대상 항목에 표시할 상태 배지
+        function renderCContentMasterBadge(item) {
+            if (item.name !== 'CContent' || !item.needsMasterCorrection) return '';
+
+            if (!currentCContentMaster || !currentCContentMaster.batch) {
+                return `
+                    <div style="padding: 10px; background: rgba(239,83,80,0.12); border:1px solid #EF5350; border-radius: 5px; margin-bottom: 15px; color:#EF9A9A;">
+                        ⚠️ C함량 Master 미입력 — 이 분말은 규격 ≤0.3%로 <b>Master 보정 대상</b>입니다.
+                        <a href="javascript:void(0)" onclick="showPage(currentInspection.category === 'incoming' ? 'incoming' : 'mixing')" style="color:#F07D00; text-decoration:underline;">목록 화면 상단에서 Master를 입력</a>한 후 진행하세요.
+                    </div>`;
+            }
+            const b = currentCContentMaster.batch;
+            const sign = b.bias >= 0 ? '+' : '';
+            return `
+                <div style="padding: 10px; background: rgba(76,175,80,0.10); border:1px solid #4CAF50; border-radius: 5px; margin-bottom: 15px; color:#A5D6A7;">
+                    🟢 C함량 Master 보정 적용 중 · 편차 ${sign}${b.bias}% (실제 ${b.actual_value}% / 측정평균 ${b.measured_avg}%, ${b.created_at})
+                </div>`;
         }
 
         // 검사 진행 화면용 검사자 목록 로드
@@ -1238,6 +1443,7 @@ function t(key) {
                         <strong style="color: #F07D00;">측정 단위:</strong> ${item.unit} |
                         <strong style="color: #F07D00;">규격:</strong> ${item.min || '-'} ~ ${item.max || '-'} ${item.unit}
                     </div>
+                    ${renderCContentMasterBadge(item)}
                 `;
 
                 if (!isCompleted) {
@@ -1420,23 +1626,35 @@ function t(key) {
                 }
             }
 
-            // 규격 판정 (로컬)
-            if (average !== null) {
-                const min = item.min;
-                const max = item.max;
-                if ((min !== null && min !== undefined && average < min) || (max !== null && max !== undefined && average > max)) {
-                    result = 'FAIL';
-                } else {
-                    result = 'PASS';
-                }
-            } else {
+            if (average === null) {
                 return alert('유효한 측정값이 없습니다.');
+            }
+
+            // C함량 Master 보정 대상 분말: 활성 Master 편차로 보정한 값으로 판정
+            let judgeValue = average;
+            let correctionNote = '';
+            if (itemName === 'CContent' && item.needsMasterCorrection) {
+                if (!currentCContentMaster || !currentCContentMaster.batch) {
+                    return alert('이 분말은 C함량 Master 보정 대상입니다.\n먼저 목록 상단에서 Master를 입력하세요.');
+                }
+                const bias = currentCContentMaster.batch.bias;
+                judgeValue = Math.round((average - bias) * 100) / 100;
+                correctionNote = ` → 보정 ${judgeValue} (Master 편차 ${bias >= 0 ? '+' : ''}${bias})`;
+            }
+
+            // 규격 판정 (로컬 미리보기, 최종 판정은 서버에서 재확인)
+            const min = item.min;
+            const max = item.max;
+            if ((min !== null && min !== undefined && judgeValue < min) || (max !== null && max !== undefined && judgeValue > max)) {
+                result = 'FAIL';
+            } else {
+                result = 'PASS';
             }
 
             // 결과 표시 및 임시저장
             const resultDiv = document.getElementById('result-' + itemName);
             resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `평균: ${average} | 결과: <span class="badge ${result === 'PASS' ? 'pass' : 'fail'}">${result}</span>`;
+            resultDiv.innerHTML = `평균: ${average}${correctionNote} | 결과: <span class="badge ${result === 'PASS' ? 'pass' : 'fail'}">${result}</span>`;
 
             pendingResults[itemName] = { values: values, average: average, result: result };
 
@@ -1476,7 +1694,10 @@ function t(key) {
                 if (data.success) {
                     const resultDiv = document.getElementById('result-' + itemName);
                     resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `평균: ${data.average} | 결과: <span class="badge ${data.result === 'PASS' ? 'pass' : 'fail'}">${data.result}</span>`;
+                    const correctionNote = (data.corrected !== null && data.corrected !== undefined)
+                        ? ` → 보정 ${data.corrected} (Master 편차 ${data.masterBias >= 0 ? '+' : ''}${data.masterBias})`
+                        : '';
+                    resultDiv.innerHTML = `평균: ${data.average}${correctionNote} | 결과: <span class="badge ${data.result === 'PASS' ? 'pass' : 'fail'}">${data.result}</span>`;
 
                     // 완료 항목에 추가
                     if (!currentInspection.completedItems.includes(itemName)) {
@@ -2035,11 +2256,19 @@ function t(key) {
                     } else if (specMax != null) {
                         specText = `규격: ≤ ${specMax} ${item.unit}`;
                     }
+                    // C함량 Master 보정이 적용된 경우 보정값도 함께 표시
+                    let correctionLine = '';
+                    if (item.prefix === 'c_content' && detail.c_content_avg_corrected !== null && detail.c_content_avg_corrected !== undefined) {
+                        const bias = detail.c_content_master_bias;
+                        const sign = bias >= 0 ? '+' : '';
+                        correctionLine = `<p style="color:#FFB74D;font-size:0.85em;">Master 보정: ${detail.c_content_avg_corrected} ${item.unit} (편차 ${sign}${bias})</p>`;
+                    }
                     html += `
                         <div class="detail-item">
                             <h4>${t(item.nameKey)}</h4>
                             ${specText ? `<p style="color:#A0A0A0;font-size:0.85em;margin:2px 0 4px;">${specText}</p>` : ''}
                             <p>${t('average')}: <strong>${avg} ${item.unit}</strong></p>
+                            ${correctionLine}
                             <p>${t('result')}: <span class="badge ${badgeClass}">${result}</span></p>
                         </div>
                     `;
@@ -2113,6 +2342,7 @@ function t(key) {
 
         // 관리자 페이지 로드
         async function loadAdminPage() {
+            await loadCContentMasterActualSetting();
             await loadPowderSpecs(powderSpecMode);
             if (document.getElementById('particlePowderSelect')) {
                 await loadParticlePowderList();

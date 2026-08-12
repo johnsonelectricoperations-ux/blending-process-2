@@ -283,7 +283,9 @@ def get_inspection_items(powder_name, inspection_type, conn=None):
              'isWeightBased': True},
 
             {'name': 'CContent', 'displayName': 'C함량', 'unit': '%',
-             'min': spec['c_content_min'], 'max': spec['c_content_max'], 'type': spec['c_content_type']},
+             'min': spec['c_content_min'], 'max': spec['c_content_max'], 'type': spec['c_content_type'],
+             'needsMasterCorrection': (spec['c_content_min'] is not None and spec['c_content_max'] is not None
+                                        and (spec['c_content_min'] + spec['c_content_max']) / 2 <= 0.3)},
 
             {'name': 'CuContent', 'displayName': 'Cu함량', 'unit': '%',
              'min': spec['cu_content_min'], 'max': spec['cu_content_max'], 'type': spec['cu_content_type']},
@@ -796,11 +798,28 @@ def save_inspection_item():
 
             # 단일 트랜잭션으로 모든 작업 수행
             with closing(get_db()) as conn:
-                # 규격 확인
-                result = check_spec(powder_name, lot_number, item_name, average, conn)
+                # C함량: Master 보정 대상 분말(목표 중앙값 ≤0.3%)이면 활성 Master 편차로 보정 후 판정
+                extra_columns = None
+                judge_value = average
+                if item_name == 'CContent' and powder_needs_c_content_correction(powder_name, conn):
+                    batch = get_c_content_master_active_batch(conn)
+                    if not batch:
+                        return jsonify({'success': False,
+                                         'message': '이 분말은 C함량 Master 보정 대상입니다. 먼저 목록 상단에서 Master를 입력하세요.'})
+                    corrected = round(average - batch['bias'], 2)
+                    judge_value = corrected
+                    extra_columns = {
+                        'c_content_avg_corrected': corrected,
+                        'c_content_master_bias': batch['bias'],
+                        'c_content_master_batch_id': batch['id'],
+                    }
+
+                # 규격 확인 (보정 대상이면 보정값 기준으로 판정)
+                result = check_spec(powder_name, lot_number, item_name, judge_value, conn)
 
                 # 데이터 저장
-                _do_save_to_result_table(powder_name, lot_number, item_name, values, average, result, conn)
+                _do_save_to_result_table(powder_name, lot_number, item_name, values, average, result, conn,
+                                          extra_columns=extra_columns)
 
                 # 진행 상태 업데이트
                 _do_update_progress(powder_name, lot_number, item_name, conn)
@@ -808,7 +827,9 @@ def save_inspection_item():
                 # 모든 작업 성공 시 커밋
                 conn.commit()
 
-            return jsonify({'success': True, 'average': f'{average:.2f}', 'result': result})
+            return jsonify({'success': True, 'average': f'{average:.2f}', 'result': result,
+                             'corrected': extra_columns['c_content_avg_corrected'] if extra_columns else None,
+                             'masterBias': extra_columns['c_content_master_bias'] if extra_columns else None})
 
         except Exception as e:
             if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
@@ -1077,6 +1098,105 @@ def get_mixing_trend():
 
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+# ============================================================
+# API: C함량 Master 보정
+# ============================================================
+
+@app.route('/api/admin/c-content-master/actual', methods=['GET'])
+def get_c_content_master_actual_setting():
+    """C함량 Master 실제값(고정 기준값) 및 변경 이력 조회 (관리자모드)"""
+    try:
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, actual_value, changed_at, changed_by
+                FROM c_content_master_actual ORDER BY id DESC
+            ''')
+            history = [dict_from_row(r) for r in cursor.fetchall()]
+            current = history[0]['actual_value'] if history else None
+            return jsonify({'success': True, 'data': {'current': current, 'history': history}})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/admin/c-content-master/actual', methods=['POST'])
+def set_c_content_master_actual_setting():
+    """C함량 Master 실제값 설정 (변경 시 이력에 새 행 추가, 기존 이력은 보존)"""
+    try:
+        data = request.json or {}
+        actual_value = data.get('actual_value')
+        changed_by = data.get('changed_by', '')
+
+        if actual_value is None or actual_value == '':
+            return jsonify({'success': False, 'message': 'Master 실제값을 입력하세요.'})
+        try:
+            actual_value = float(actual_value)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': 'Master 실제값은 숫자여야 합니다.'})
+
+        with closing(get_db()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO c_content_master_actual (actual_value, changed_by)
+                VALUES (?, ?)
+            ''', (actual_value, changed_by))
+            conn.commit()
+            return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/c-content-master/status', methods=['GET'])
+def get_c_content_master_status():
+    """현재 적용 중인 Master 분석 배치 상태 조회 (수입/배합 목록 상단 상태바용)"""
+    try:
+        with closing(get_db()) as conn:
+            actual_value = get_c_content_master_actual(conn)
+            batch = get_c_content_master_active_batch(conn)
+            return jsonify({'success': True, 'data': {'actualValue': actual_value, 'batch': batch}})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/c-content-master/batch', methods=['POST'])
+def submit_c_content_master_batch():
+    """새 Master 분석 배치 입력 (2회 측정 → 평균/편차 계산, 이후 시료에 자동 적용)"""
+    try:
+        data = request.json or {}
+        measure_1 = data.get('measure1')
+        measure_2 = data.get('measure2')
+        created_by = data.get('createdBy', '')
+
+        if measure_1 is None or measure_2 is None or measure_1 == '' or measure_2 == '':
+            return jsonify({'success': False, 'message': 'Master 측정값 2회를 모두 입력하세요.'})
+        try:
+            measure_1 = float(measure_1)
+            measure_2 = float(measure_2)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': 'Master 측정값은 숫자여야 합니다.'})
+
+        with closing(get_db()) as conn:
+            actual_value = get_c_content_master_actual(conn)
+            if actual_value is None:
+                return jsonify({'success': False, 'message': 'Master 실제값이 설정되지 않았습니다. 관리자모드에서 먼저 설정하세요.'})
+
+            measured_avg = round((measure_1 + measure_2) / 2, 3)
+            bias = round(measured_avg - actual_value, 3)
+
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO c_content_master_batch
+                    (actual_value, measure_1, measure_2, measured_avg, bias, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (actual_value, measure_1, measure_2, measured_avg, bias, created_by))
+            conn.commit()
+
+            batch = get_c_content_master_active_batch(conn)
+            return jsonify({'success': True, 'data': {'actualValue': actual_value, 'batch': batch}})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 
 # ============================================
 # API: 검사 결과 삭제
@@ -1447,11 +1567,12 @@ def save_to_result_table(powder_name, lot_number, item_name, values, average, re
     if last_error:
         raise last_error
 
-def _do_save_to_result_table(powder_name, lot_number, item_name, values, average, result, conn=None):
+def _do_save_to_result_table(powder_name, lot_number, item_name, values, average, result, conn=None, extra_columns=None):
     """실제 저장 로직
 
     Args:
         conn: 기존 DB 연결 (없으면 새로 생성)
+        extra_columns: {컬럼명: 값} 형태로, 표준 컬럼 외 추가로 저장할 값 (예: C함량 Master 보정값)
     """
     # 연결이 제공되지 않은 경우 새로 생성
     owns_connection = conn is None
@@ -1525,6 +1646,11 @@ def _do_save_to_result_table(powder_name, lot_number, item_name, values, average
                 update_parts.append(f'{columns[4]} = ?')
                 update_values.append(result)
 
+                if extra_columns:
+                    for col, val in extra_columns.items():
+                        update_parts.append(f'{col} = ?')
+                        update_values.append(val)
+
                 update_values.append(existing[0])
 
                 query = f"UPDATE inspection_result SET {', '.join(update_parts)} WHERE id = ?"
@@ -1574,6 +1700,11 @@ def _do_save_to_result_table(powder_name, lot_number, item_name, values, average
 
                 update_parts.append(f'{columns[4]} = ?')
                 update_values.append(result)
+
+                if extra_columns:
+                    for col, val in extra_columns.items():
+                        update_parts.append(f'{col} = ?')
+                        update_values.append(val)
 
                 update_values.append(new_id)
 
@@ -1990,7 +2121,11 @@ def update_final_result(powder_name, lot_number, conn=None):
                     avg_col, unit = col_avg_map.get(col, (None, ''))
                     avg = result_data.get(avg_col) if avg_col else None
                     if avg is not None:
-                        failed_values[label] = f"{avg} {unit}".strip()
+                        text = f"{avg} {unit}".strip()
+                        # C함량 Master 보정이 적용된 경우 보정값도 함께 표기
+                        if col == 'c_content_result' and result_data.get('c_content_avg_corrected') is not None:
+                            text += f" → 보정 {result_data['c_content_avg_corrected']} {unit}".rstrip()
+                        failed_values[label] = text
 
         # 현재 검사 회차 조회
         current_round = result_data.get('current_round') or 1
@@ -2865,9 +3000,85 @@ def record_spec_history(cursor, old_spec, new_data, powder_name):
     ''', [powder_name] + [new_vals[c] for c in SPEC_TREND_COLUMNS])
 
 
+def ensure_c_content_master_tables():
+    """C함량 Master 보정 관련 테이블/컬럼 생성
+
+    - c_content_master_actual: Master 실제값(고정 기준값) 변경 이력 (관리자모드에서 설정)
+    - c_content_master_batch: 분석 배치마다 입력하는 Master 측정값(2회) 및 편차
+    - inspection_result: 보정값/편차/사용한 배치를 함께 저장할 컬럼 추가
+    """
+    with closing(get_db()) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS c_content_master_actual (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                actual_value REAL NOT NULL,
+                changed_at   TIMESTAMP DEFAULT (datetime('now','localtime')),
+                changed_by   TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS c_content_master_batch (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                actual_value  REAL NOT NULL,
+                measure_1     REAL NOT NULL,
+                measure_2     REAL NOT NULL,
+                measured_avg  REAL NOT NULL,
+                bias          REAL NOT NULL,
+                created_at    TIMESTAMP DEFAULT (datetime('now','localtime')),
+                created_by    TEXT
+            )
+        ''')
+        cursor.execute("PRAGMA table_info(inspection_result)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if 'c_content_avg_corrected' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN c_content_avg_corrected REAL')
+        if 'c_content_master_bias' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN c_content_master_bias REAL')
+        if 'c_content_master_batch_id' not in cols:
+            cursor.execute('ALTER TABLE inspection_result ADD COLUMN c_content_master_batch_id INTEGER')
+        conn.commit()
+
+
+def get_c_content_master_actual(conn):
+    """현재 적용 중인 Master 실제값 (가장 최근 설정값). 없으면 None."""
+    cursor = conn.cursor()
+    cursor.execute('SELECT actual_value FROM c_content_master_actual ORDER BY id DESC LIMIT 1')
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def get_c_content_master_active_batch(conn):
+    """현재 적용 중인 Master 분석 배치 (가장 최근 입력분). 없으면 None."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, actual_value, measure_1, measure_2, measured_avg, bias, created_at, created_by
+        FROM c_content_master_batch ORDER BY id DESC LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        'id': row[0], 'actual_value': row[1], 'measure_1': row[2], 'measure_2': row[3],
+        'measured_avg': row[4], 'bias': row[5], 'created_at': row[6], 'created_by': row[7]
+    }
+
+
+def powder_needs_c_content_correction(powder_name, conn):
+    """C함량 목표 중앙값이 0.3% 이하인 분말인지 확인 (Master 보정 대상 여부)"""
+    cursor = conn.cursor()
+    cursor.execute('SELECT c_content_min, c_content_max FROM powder_spec WHERE powder_name = ?', (powder_name,))
+    row = cursor.fetchone()
+    if not row or row[0] is None or row[1] is None:
+        return False
+    mid = (row[0] + row[1]) / 2
+    return mid <= 0.3
+
+
 ensure_inspection_history_table()
 ensure_retest_columns()
 ensure_powder_spec_history_table()
+ensure_c_content_master_tables()
 
 # ---------------------------------------------------------------------------
 # Millsheet 업로드 API
