@@ -1025,7 +1025,8 @@ def get_mixing_trend():
 
             query = '''
                 SELECT lot_number, inspection_date, inspection_time,
-                       apparent_density_avg, flow_rate_avg, c_content_avg, cu_content_avg
+                       apparent_density_avg, flow_rate_avg, c_content_avg, cu_content_avg,
+                       c_content_avg_corrected, c_content_master_bias
                 FROM inspection_result
                 WHERE powder_name = ? AND category = 'mixing'
                   AND (is_hidden IS NULL OR is_hidden = 0)
@@ -1046,6 +1047,16 @@ def get_mixing_trend():
             # 4개 측정값이 모두 없는 행은 제외
             value_cols = ['apparent_density_avg', 'flow_rate_avg', 'c_content_avg', 'cu_content_avg']
             rows = [r for r in rows if any(r.get(c) is not None for c in value_cols)]
+
+            # C함량 Master 보정이 적용된 LOT은 그래프에 보정값을 사용 (판정에 실제 쓰인 값과 일치시킴)
+            # 원측정값은 c_content_avg_raw로 별도 보존하여 툴팁 등에서 참조 가능하게 함
+            for r in rows:
+                if r.get('c_content_avg_corrected') is not None:
+                    r['c_content_avg_raw'] = r['c_content_avg']
+                    r['c_content_avg'] = r['c_content_avg_corrected']
+                    r['c_content_corrected'] = True
+                else:
+                    r['c_content_corrected'] = False
 
             # 최근 N개 LOT만 (시간순 정렬 유지)
             if limit:

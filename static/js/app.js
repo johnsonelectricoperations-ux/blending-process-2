@@ -6742,6 +6742,10 @@ function t(key) {
                         ((l.spec_at[`${item.key}_min`] ?? null) !== (sMin ?? null) ||
                          (l.spec_at[`${item.key}_max`] ?? null) !== (sMax ?? null)));
                     if (varied) specText += ' <span style="color:#F07D00;">· 기간 중 규격 변경됨</span>';
+                    // C함량: Master 보정값이 적용된 LOT이 있으면 안내
+                    if (item.key === 'c_content' && lots.some(l => l.c_content_corrected)) {
+                        specText += ' <span style="color:#FFB74D;">· Master 보정값 표시 (● 표시)</span>';
+                    }
                     return `
                         <div style="background:#232323; border:1px solid #333; border-radius:8px; padding:12px 14px;">
                             <div style="font-size:0.92em; font-weight:700;">${item.label} <span style="color:#777; font-weight:400; font-size:0.85em;">(${item.unit})</span></div>
@@ -6776,11 +6780,16 @@ function t(key) {
                     const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 0.1;
 
                     // 규격 이탈 LOT 빨간 점 강조 (해당 LOT 시점의 규격 기준)
+                    // C함량 Master 보정이 적용된 LOT은 주황 점으로 별도 표시 (이탈이면 빨간 점 우선)
                     const discrete = [];
                     values.forEach((v, i) => {
                         if (v == null) return;
                         const ng = (minArr[i] != null && v < minArr[i]) || (maxArr[i] != null && v > maxArr[i]);
-                        if (ng) discrete.push({ seriesIndex: 0, dataPointIndex: i, size: 6, fillColor: '#EF5350', strokeColor: '#1B1B1B' });
+                        if (ng) {
+                            discrete.push({ seriesIndex: 0, dataPointIndex: i, size: 6, fillColor: '#EF5350', strokeColor: '#1B1B1B' });
+                        } else if (item.key === 'c_content' && lots[i] && lots[i].c_content_corrected) {
+                            discrete.push({ seriesIndex: 0, dataPointIndex: i, size: 6, fillColor: '#F07D00', strokeColor: '#1B1B1B' });
+                        }
                     });
 
                     const series = [{ name: item.label, data: values }];
@@ -6808,7 +6817,16 @@ function t(key) {
                         yaxis: { min: lo - pad, max: hi + pad,
                                  labels: { formatter: v => v != null ? Number(v).toFixed(3).replace(/\.?0+$/, '') : '' } },
                         tooltip: { theme: 'dark', shared: true, intersect: false,
-                                   y: { formatter: v => v != null ? `${v} ${item.unit}` : '-' } },
+                                   y: { formatter: (v, opts) => {
+                                       if (v == null) return '-';
+                                       if (item.key === 'c_content' && opts && opts.seriesIndex === 0) {
+                                           const l = lots[opts.dataPointIndex];
+                                           if (l && l.c_content_corrected) {
+                                               return `${v} ${item.unit} (보정, 원측정 ${l.c_content_avg_raw}${item.unit})`;
+                                           }
+                                       }
+                                       return `${v} ${item.unit}`;
+                                   } } },
                         grid: { borderColor: '#333' }
                     };
                     trendCharts[item.key] = new ApexCharts(el, opts);
